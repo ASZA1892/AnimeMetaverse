@@ -1,0 +1,1 @@
+{"name":"AnimeMetaverse","tree":{"$className":"DataModel","StarterPlayer":{"StarterPlayerScripts":{"$path":"src/client"}},"ServerScriptService":{"$path":"src/server"},"ReplicatedStorage":{"$path":"src/shared"}}}
