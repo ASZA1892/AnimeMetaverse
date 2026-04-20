@@ -4,6 +4,9 @@
     "$className": "DataModel",
     "ReplicatedStorage": {
       "$className": "ReplicatedStorage",
+      "CombatRemote": {
+        "$className": "RemoteEvent"
+      },
       "Shared": {
         "$path": "src/shared"
       }
@@ -11,7 +14,17 @@
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "Combat": {
-        "$path": "src/server/Combat"
+        "$className": "Folder",
+        "GuardSystem": {
+          "$path": "src/server/Combat/GuardSystem.server.lua"
+        },
+        "CombatHandler": {
+          "$path": "src/server/Combat/CombatHandler.server.lua"
+        },
+        "CombatStateMachine": {
+          "$path": "src/server/Combat/CombatStateMachine.server.lua",
+          "$className": "ModuleScript"
+        }
       }
     },
     "StarterPlayer": {

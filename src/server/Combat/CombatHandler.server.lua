@@ -1,272 +1,368 @@
 -- src/server/Combat/CombatHandler.server.lua
--- Data-driven server-side combat handler with Guard/Parry (hardened)
+-- Robust data-driven server-side combat handler with Guard/Parry
+-- Paste-ready: safe waits, safe requires, diagnostics, and same combat logic.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
--- Remote event (safe find/create)
-local CombatRemote = ReplicatedStorage:FindFirstChild("CombatRemote")
-if not CombatRemote then
-	CombatRemote = Instance.new("RemoteEvent")
-	CombatRemote.Name = "CombatRemote"
-	CombatRemote.Parent = ReplicatedStorage
+-- Robust WaitForChild wrapper
+local function safeWait(parent, name, timeout)
+    if not parent then
+        warn(("safeWait: parent is nil for '%s'"):format(name))
+        return nil
+    end
+    local ok, inst = pcall(function() return parent:WaitForChild(name, timeout) end)
+    if not ok then
+        warn(("safeWait: WaitForChild('%s') errored"):format(name))
+        return nil
+    end
+    if not inst then
+        warn(("safeWait: WaitForChild('%s') timed out"):format(name))
+        return nil
+    end
+    return inst
 end
 
--- Modules
-local CombatActions = require(ReplicatedStorage.Shared.Types.CombatActions)
-local Constants = require(ReplicatedStorage.Shared.Types.constants)
-local CombatStateMachine = require(script.Parent.CombatStateMachine)
-local MoveDefinitions = require(ReplicatedStorage.Shared.Types.MoveDefinitions)
-local GuardSystem = require(script.Parent.GuardSystem)
+-- Locate shared/type modules
+local sharedFolder = safeWait(ReplicatedStorage, "Shared", 5)
+local typesFolder = safeWait(sharedFolder, "Types", 5)
+
+local CombatActionsModule = safeWait(typesFolder, "CombatActions", 2)
+local ConstantsModule = safeWait(typesFolder, "constants", 2)
+local MoveDefinitionsModule = safeWait(typesFolder, "MoveDefinitions", 2)
+
+local CombatStateMachineModule = safeWait(script.Parent, "CombatStateMachine", 5)
+local GuardSystemModule = safeWait(script.Parent, "GuardSystem", 5)
+
+print("DEBUG: module presence:",
+      "Shared=", tostring(sharedFolder ~= nil),
+      "Types=", tostring(typesFolder ~= nil),
+      "CombatActions=", tostring(CombatActionsModule ~= nil),
+      "constants=", tostring(ConstantsModule ~= nil),
+      "MoveDefinitions=", tostring(MoveDefinitionsModule ~= nil),
+      "CombatStateMachine=", tostring(CombatStateMachineModule ~= nil),
+      "GuardSystem=", tostring(GuardSystemModule ~= nil)
+)
+
+-- Safe require with diagnostics
+local function safeRequire(inst, name)
+    if not inst then
+        warn(("safeRequire: %s is nil"):format(name))
+        return nil
+    end
+    local className = (inst.ClassName and tostring(inst.ClassName)) or "no ClassName"
+    print(("DEBUG: safeRequire target %s -> ClassName=%s typeof=%s"):format(name, className, typeof(inst)))
+    if className ~= "ModuleScript" then
+        warn(("safeRequire: %s is not a ModuleScript (ClassName=%s)"):format(name, className))
+    end
+    local ok, result = pcall(require, inst)
+    if not ok then
+        warn(("safeRequire: require(%s) failed: %s"):format(name, tostring(result)))
+        return nil
+    end
+    return result
+end
+
+local CombatActions = safeRequire(CombatActionsModule, "CombatActions")
+local Constants = safeRequire(ConstantsModule, "constants")
+local MoveDefinitions = safeRequire(MoveDefinitionsModule, "MoveDefinitions")
+local CombatStateMachine = safeRequire(CombatStateMachineModule, "CombatStateMachine")
+local GuardSystem = safeRequire(GuardSystemModule, "GuardSystem")
+
+-- Ensure CombatRemote exists on server (server-side fallback)
+local CombatRemote = ReplicatedStorage:FindFirstChild("CombatRemote")
+if not CombatRemote then
+    CombatRemote = Instance.new("RemoteEvent")
+    CombatRemote.Name = "CombatRemote"
+    CombatRemote.Parent = ReplicatedStorage
+    warn("CombatHandler: created CombatRemote fallback in ReplicatedStorage")
+end
+
+-- Debug helper
+local function dbg(...)
+    if Constants and Constants.DEBUG then
+        print(...)
+    end
+end
+
+-- Simple per-player rate limiter
+local lastRpcAt = setmetatable({}, { __mode = "k" })
+local RPC_MIN_INTERVAL = 0.05
+
+local function canProcessRpc(player)
+    local now = tick()
+    local last = lastRpcAt[player] or 0
+    if now - last < RPC_MIN_INTERVAL then
+        return false
+    end
+    lastRpcAt[player] = now
+    return true
+end
 
 -- Helper: find the character model from any descendant part
 local function findCharacterModelFromPart(part)
-	local node = part
-	local depth = 0
-	while node and depth < 12 do
-		if node:IsA("Model") then
-			if node:FindFirstChildOfClass("Humanoid") or node:FindFirstChild("HumanoidRootPart") then
-				return node
-			end
-		end
-		node = node.Parent
-		depth = depth + 1
-	end
-	return nil
+    local node = part
+    local depth = 0
+    while node and depth < 12 do
+        if node:IsA("Model") then
+            if node:FindFirstChildOfClass("Humanoid") or node:FindFirstChild("HumanoidRootPart") then
+                return node
+            end
+        end
+        node = node.Parent
+        depth = depth + 1
+    end
+    return nil
 end
 
--- Helper: get humanoid from player
-local function getHumanoidFromPlayer(player)
-	local char = player.Character
-	return char and char:FindFirstChildOfClass("Humanoid")
-end
-
--- Helper: check if player is alive
-local function isPlayerAlive(player)
-	local hum = getHumanoidFromPlayer(player)
-	return hum and hum.Health > 0
-end
-
--- Apply move-specific effects (works with both Player and Model)
+-- Apply move-specific effects
 local function applyEffects(targetModel, move, attacker)
-	local hum = targetModel:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-	
-	if move.slow then
-		local originalSpeed = hum.WalkSpeed
-		hum.WalkSpeed = originalSpeed * move.slow.percent
-		task.delay(move.slow.duration, function()
-			if hum and hum.Parent then
-				hum.WalkSpeed = originalSpeed
-			end
-		end)
-	end
-	
-	if move.launch then
-		local root = targetModel.PrimaryPart or targetModel:FindFirstChild("HumanoidRootPart")
-		if root then
-			root.Velocity = Vector3.new(0, move.launchPower or 25, 0)
-		end
-	end
-	
-	if move.stun and move.stun > 0 then
-		local targetPlayer = Players:GetPlayerFromCharacter(targetModel)
-		if targetPlayer then
-			CombatStateMachine.ForceState(targetPlayer, CombatStateMachine.States.Stunned, {
-				expiresAt = tick() + move.stun
-			})
-		else
-			if hum then
-				local oldWalkSpeed = hum.WalkSpeed
-				hum.WalkSpeed = 0
-				task.delay(move.stun, function()
-					if hum and hum.Parent then
-						hum.WalkSpeed = oldWalkSpeed
-					end
-				end)
-			end
-		end
-	end
-	
-	if move.groundBounce then
-		local root = targetModel.PrimaryPart or targetModel:FindFirstChild("HumanoidRootPart")
-		if root then
-			root.Velocity = Vector3.new(0, 20, 0)
-		end
-	end
+    local hum = targetModel:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    if move.slow then
+        local originalSpeed = hum.WalkSpeed
+        hum.WalkSpeed = originalSpeed * (move.slow.percent or 1)
+        task.delay(move.slow.duration or 0.5, function()
+            if hum and hum.Parent then
+                hum.WalkSpeed = originalSpeed
+            end
+        end)
+    end
+
+    if move.launch then
+        local root = targetModel.PrimaryPart or targetModel:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.Velocity = Vector3.new(0, move.launchPower or 25, 0)
+        end
+    end
+
+    if move.stun and move.stun > 0 then
+        local targetPlayer = Players:GetPlayerFromCharacter(targetModel)
+        if targetPlayer and CombatStateMachine and CombatStateMachine.ForceState then
+            CombatStateMachine.ForceState(targetPlayer, CombatStateMachine.States.Stunned, {
+                expiresAt = tick() + move.stun
+            })
+        else
+            local oldWalkSpeed = hum.WalkSpeed
+            hum.WalkSpeed = 0
+            task.delay(move.stun, function()
+                if hum and hum.Parent then
+                    hum.WalkSpeed = oldWalkSpeed
+                end
+            end)
+        end
+    end
+
+    if move.groundBounce then
+        local root = targetModel.PrimaryPart or targetModel:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.Velocity = Vector3.new(0, 20, 0)
+        end
+    end
 end
 
 -- Main remote listener
-CombatRemote.OnServerEvent:Connect(function(player: Player, action: string, data: any)
-	local currentState = CombatStateMachine.GetState(player)
-	
-	-- Block handling
-	if action == CombatActions.ClientToServer.BLOCK_START then
-		GuardSystem.StartBlocking(player)
-		return
-	elseif action == CombatActions.ClientToServer.BLOCK_END then
-		GuardSystem.StopBlocking(player)
-		return
-	end
-	
-	-- Parry attempt
-	if action == CombatActions.ClientToServer.PARRY then
-		local success = GuardSystem.RecordParry(player)
-		if not success and Constants.DEBUG then
-			print("  ↳ Parry on cooldown for " .. player.Name)
-		end
-		return
-	end
-	
-	-- Attack handling
-	local moveId = data and data.moveId
-	if not moveId then return end
-	
-	local move = MoveDefinitions.GetMove(moveId)
-	if not move then
-		if Constants.DEBUG then print("  ↳ Unknown move: " .. tostring(moveId)) end
-		return
-	end
-	
-	if Constants.DEBUG then
-		print("[Combat] " .. player.Name .. " | Move: " .. moveId .. " | State: " .. currentState)
-	end
-	
-	-- Validate attack permission
-	if not CombatStateMachine.CanAttack(player) then
-		if Constants.DEBUG then print("  ↳ Rejected: Cannot attack from state " .. currentState) end
-		return
-	end
-	
-	-- Move-specific validations
-	if move.requiresDash and currentState ~= CombatStateMachine.States.Dashing then
-		if Constants.DEBUG then print("  ↳ Rejected: Move requires dash") end
-		return
-	end
-	if move.requiresAirborne and not CombatStateMachine.GetIsAirborne(player) then
-		if Constants.DEBUG then print("  ↳ Rejected: Move requires airborne") end
-		return
-	end
-	
-	-- Transition to Attacking state
-	local success, reason = CombatStateMachine.TrySetState(player, CombatStateMachine.States.Attacking, {
-		expiresAt = tick() + move.cooldown
-	})
-	if not success then
-		if Constants.DEBUG then print("  ↳ Rejected: State transition failed: " .. tostring(reason)) end
-		return
-	end
-	
-	local character = player.Character
-	if not character or not character.PrimaryPart then
-		if Constants.DEBUG then print("  ↳ Rejected: No character") end
-		CombatStateMachine.ForceState(player, CombatStateMachine.States.Idle)
-		return
-	end
-	
-	local rootPart = character.PrimaryPart
-	
-	-- Calculate hitbox position
-	local forward = rootPart.CFrame.LookVector
-	local offset = forward * (move.range / 2)
-	local center = rootPart.Position + offset
-	local boxCFrame = CFrame.new(center)
-	
-	-- Overlap detection
-	local overlapParams = OverlapParams.new()
-	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-	overlapParams.FilterDescendantsInstances = {character}
-	
-	local partsInBox = Workspace:GetPartBoundsInBox(boxCFrame, move.hitboxSize, overlapParams)
-	
-	-- Find first valid target (player or NPC)
-	local hitModel = nil
-	local hitPlayer = nil
-	for _, part in ipairs(partsInBox) do
-		local model = findCharacterModelFromPart(part)
-		if model and model ~= character then
-			local hum = model:FindFirstChildOfClass("Humanoid")
-			if hum and hum.Health > 0 then
-				hitModel = model
-				hitPlayer = Players:GetPlayerFromCharacter(model)
-				break
-			end
-		end
-	end
-	
-	if hitModel then
-		local hitHumanoid = hitModel:FindFirstChildOfClass("Humanoid")
-		local targetName = hitPlayer and hitPlayer.Name or hitModel.Name
-		
-		-- Canonical attacker/target players
-		local attackerPlayer = player
-		local targetPlayer = hitPlayer  -- nil for NPCs
-		
-		-- Process through guard system
-		local finalDamage, wasParried, guardBroken = GuardSystem.ProcessHit(attackerPlayer, targetPlayer or hitModel, move.damage, move)
-		
-		if wasParried then
-			if Constants.DEBUG then print("  ↳ Parried by " .. targetName) end
-			return
-		end
-		
-		if finalDamage > 0 then
-			hitHumanoid:TakeDamage(finalDamage)
-			if Constants.DEBUG then print("  ↳ Hit! " .. targetName .. " took " .. finalDamage .. " damage from " .. moveId) end
-		else
-			if Constants.DEBUG then print("  ↳ Blocked! " .. targetName) end
-		end
-		
-		-- Knockback and effects (only if not parried)
-		if not wasParried then
-			if move.knockback > 0 then
-				local hitRoot = hitModel.PrimaryPart or hitModel:FindFirstChild("HumanoidRootPart")
-				if hitRoot then
-					local knockbackDir = (hitRoot.Position - rootPart.Position).Unit
-					local isTargetBlocking = targetPlayer and (CombatStateMachine.GetState(targetPlayer) == CombatStateMachine.States.Blocking)
-					local multiplier = isTargetBlocking and 0.5 or 1.0
-					hitRoot.Velocity = knockbackDir * move.knockback * 10 * multiplier
-				end
-			end
-			
-			local isTargetBlocking = targetPlayer and (CombatStateMachine.GetState(targetPlayer) == CombatStateMachine.States.Blocking)
-			if not isTargetBlocking then
-				applyEffects(hitModel, move, attackerPlayer)
-			end
-		end
-		
-		-- Lunge (attacker)
-		if move.lunge then
-			rootPart.Velocity = forward * move.lunge * 20
-		end
-		
-		-- Fire HitConfirmed to involved clients only
-		if finalDamage > 0 or guardBroken then
-			local hitData = {
-				attacker = attackerPlayer,
-				target = targetPlayer,
-				position = hitModel.PrimaryPart and hitModel.PrimaryPart.Position or Vector3.zero,
-				damage = finalDamage,
-				moveId = moveId,
-				hitStop = Constants.HIT_STOP_DURATION,
-				serverTimestamp = tick(),
-				blocked = (targetPlayer and (CombatStateMachine.GetState(targetPlayer) == CombatStateMachine.States.Blocking)) or false,
-				guardBroken = guardBroken
-			}
-			
-			-- Notify attacker
-			if attackerPlayer then
-				CombatRemote:FireClient(attackerPlayer, CombatActions.ServerToClient.HIT_CONFIRMED, hitData)
-			end
-			-- Notify target
-			if targetPlayer then
-				CombatRemote:FireClient(targetPlayer, CombatActions.ServerToClient.HIT_CONFIRMED, hitData)
-			end
-		end
-	else
-		if Constants.DEBUG then print("  ↳ Miss (" .. moveId .. ")") end
-	end
+CombatRemote.OnServerEvent:Connect(function(player, action, data)
+    -- Basic validation and rate limiting
+    if not player or not player:IsA("Player") then return end
+    if not canProcessRpc(player) then
+        dbg("RPC rate limited for", player.Name)
+        return
+    end
+
+    if not CombatStateMachine or not MoveDefinitions or not GuardSystem or not CombatActions then
+        warn("CombatHandler: missing core modules, aborting RPC")
+        return
+    end
+
+    local currentState = CombatStateMachine.GetState(player)
+
+    -- Debug trace
+    dbg(("--- CombatTrace start for %s ---"):format(player.Name))
+    dbg("action:", tostring(action))
+    dbg("data type:", typeof(data), "moveId:", tostring(data and data.moveId))
+
+    -- Block handling
+    if action == CombatActions.ClientToServer.BLOCK_START then
+        GuardSystem.StartBlocking(player)
+        return
+    elseif action == CombatActions.ClientToServer.BLOCK_END then
+        GuardSystem.StopBlocking(player)
+        return
+    end
+
+    -- Parry attempt
+    if action == CombatActions.ClientToServer.PARRY then
+        local ok = GuardSystem.RecordParry(player)
+        if not ok then
+            dbg("Parry ignored for", player.Name)
+        end
+        return
+    end
+
+    -- Attack handling
+    if type(data) ~= "table" then
+        dbg("Rejected: invalid payload type")
+        return
+    end
+
+    local moveId = data.moveId
+    if type(moveId) ~= "string" then
+        dbg("Rejected: invalid moveId")
+        return
+    end
+
+    local move = MoveDefinitions.GetMove(moveId)
+    if not move then
+        dbg("Unknown move:", moveId)
+        return
+    end
+
+    dbg("[Combat] " .. player.Name .. " | Move: " .. moveId .. " | State: " .. tostring(currentState))
+
+    -- Validate attack permission
+    if not CombatStateMachine.CanAttack(player) then
+        dbg("Rejected: Cannot attack from state", tostring(currentState))
+        return
+    end
+
+    -- Move-specific validations
+    if move.requiresDash and currentState ~= CombatStateMachine.States.Dashing then
+        dbg("Rejected: Move requires dash")
+        return
+    end
+    if move.requiresAirborne and not CombatStateMachine.GetIsAirborne(player) then
+        dbg("Rejected: Move requires airborne")
+        return
+    end
+
+    -- Transition to Attacking state
+    local ok, reason = CombatStateMachine.TrySetState(player, CombatStateMachine.States.Attacking, {
+        expiresAt = tick() + (move.cooldown or 0)
+    })
+    if not ok then
+        dbg("Rejected: State transition failed:", tostring(reason))
+        return
+    end
+
+    local character = player.Character
+    if not character or not character.PrimaryPart then
+        dbg("Rejected: No character")
+        CombatStateMachine.ForceState(player, CombatStateMachine.States.Idle)
+        return
+    end
+
+    local rootPart = character.PrimaryPart
+
+    -- Calculate hitbox position
+    local forward = rootPart.CFrame.LookVector
+    local offset = forward * ((move.range or 3) / 2)
+    local center = rootPart.Position + offset
+    local boxCFrame = CFrame.new(center)
+
+    -- Overlap detection
+    local overlapParams = OverlapParams.new()
+    overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+    overlapParams.FilterDescendantsInstances = {character}
+
+    local partsInBox = Workspace:GetPartBoundsInBox(boxCFrame, move.hitboxSize or Vector3.new(3,3,3), overlapParams)
+
+    dbg("partsInBox count:", #partsInBox)
+
+    -- Find first valid target
+    local hitModel, hitPlayer
+    for _, part in ipairs(partsInBox) do
+        local model = findCharacterModelFromPart(part)
+        if model and model ~= character then
+            local hum = model:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 then
+                hitModel = model
+                hitPlayer = Players:GetPlayerFromCharacter(model)
+                break
+            end
+        end
+    end
+
+    if not hitModel then
+        dbg("Miss:", moveId)
+        return
+    end
+
+    -- Re-check range to avoid edge false positives
+    local hitRoot = hitModel.PrimaryPart or hitModel:FindFirstChild("HumanoidRootPart")
+    if hitRoot then
+        local dist = (hitRoot.Position - rootPart.Position).Magnitude
+        if dist > ((move.range or 3) + 0.5) then
+            dbg("Rejected: target out of range", dist)
+            return
+        end
+    end
+
+    local hitHumanoid = hitModel:FindFirstChildOfClass("Humanoid")
+    local targetName = hitPlayer and hitPlayer.Name or hitModel.Name
+
+    -- Process through guard system
+    local finalDamage, wasParried, guardBroken = GuardSystem.ProcessHit(player, hitPlayer or hitModel, move.damage or 0, move)
+
+    if wasParried then
+        dbg("Parried by", targetName)
+        local parryData = {attacker = player, target = hitPlayer, moveId = moveId, serverTimestamp = tick()}
+        CombatRemote:FireClient(player, CombatActions.ServerToClient.HIT_PARRIED, parryData)
+        if hitPlayer then
+            CombatRemote:FireClient(hitPlayer, CombatActions.ServerToClient.PARRY_SUCCESS, parryData)
+        end
+        return
+    end
+
+    -- Apply damage if any
+    if finalDamage > 0 and hitHumanoid and hitHumanoid.Parent then
+        hitHumanoid:TakeDamage(finalDamage)
+        dbg("Hit!", targetName, "took", finalDamage, "from", moveId)
+    else
+        dbg("Blocked!", targetName)
+    end
+
+    -- Knockback and effects (only if not parried)
+    if not wasParried then
+        if move.knockback and move.knockback > 0 and hitRoot then
+            local dirVec = hitRoot.Position - rootPart.Position
+            local okUnit, knockbackDir = pcall(function() return dirVec.Unit end)
+            if okUnit and knockbackDir then
+                local multiplier = (hitPlayer and CombatStateMachine.GetState(hitPlayer) == CombatStateMachine.States.Blocking) and 0.5 or 1.0
+                hitRoot.Velocity = knockbackDir * (move.knockback * 10) * multiplier
+            end
+        end
+
+        if not hitPlayer or CombatStateMachine.GetState(hitPlayer) ~= CombatStateMachine.States.Blocking then
+            applyEffects(hitModel, move, player)
+        end
+    end
+
+    -- Lunge (attacker)
+    if move.lunge then
+        rootPart.Velocity = forward * (move.lunge * 20)
+    end
+
+    -- Fire HitConfirmed to involved clients only
+    if finalDamage > 0 or guardBroken then
+        local hitData = {
+            attacker = player,
+            target = hitPlayer,
+            position = hitModel.PrimaryPart and hitModel.PrimaryPart.Position or Vector3.zero,
+            damage = finalDamage,
+            moveId = moveId,
+            hitStop = Constants and Constants.HIT_STOP_DURATION or 0,
+            serverTimestamp = tick(),
+            blocked = (hitPlayer and CombatStateMachine.GetState(hitPlayer) == CombatStateMachine.States.Blocking) or false,
+            guardBroken = guardBroken
+        }
+        CombatRemote:FireClient(player, CombatActions.ServerToClient.HIT_CONFIRMED, hitData)
+        if hitPlayer then
+            CombatRemote:FireClient(hitPlayer, CombatActions.ServerToClient.HIT_CONFIRMED, hitData)
+        end
+    end
 end)
 
-print("✅ CombatHandler server initialized (hardened)")
+dbg("✅ CombatHandler server initialized (with Guard/Parry)")
