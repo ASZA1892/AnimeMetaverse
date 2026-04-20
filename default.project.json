@@ -1,1 +1,30 @@
-{"name":"AnimeMetaverse","tree":{"$className":"DataModel","StarterPlayer":{"StarterPlayerScripts":{"$path":"src/client"}},"ServerScriptService":{"$path":"src/server"},"ReplicatedStorage":{"$path":"src/shared"}}}
+{
+  "name": "AnimeMetaverse",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Combat": {
+        "$path": "src/server/Combat"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Combat": {
+          "$path": "src/client/Combat"
+        },
+        "Animations": {
+          "$path": "src/client/Animations"
+        }
+      }
+    }
+  }
+}
