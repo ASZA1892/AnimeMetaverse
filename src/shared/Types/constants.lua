@@ -30,9 +30,13 @@ Constants.SUBSTITUTION_MIN_STAMINA = 20
 
 -- Guard
 Constants.MAX_GUARD = 100
-Constants.GUARD_BREAK_STUN = 2 -- seconds
-Constants.GUARD_REGEN_RATE = 25 -- per second
-Constants.GUARD_REGEN_DELAY = 2 -- seconds before regen starts
+Constants.GUARD_DEPLETION_PER_HIT = 20   -- Guard bar lost per blocked hit
+Constants.GUARD_BREAK_STUN = 2           -- seconds stunned when guard breaks
+Constants.GUARD_REGEN_RATE = 25          -- per second
+Constants.GUARD_REGEN_DELAY = 2          -- seconds before regen starts
+Constants.CHIP_DAMAGE_PERCENT = 0.15     -- 15% damage bleeds through block
+Constants.PARRY_STUN_DURATION = 1.5      -- Stun applied to attacker on successful parry
+Constants.PARRY_COOLDOWN = 1.0           -- Seconds between parry attempts
 
 -- Dash
 Constants.DASH_IFRAMES_QUICK = 0.1

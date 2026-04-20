@@ -25,6 +25,12 @@
           "$path": "src/client/Animations"
         }
       }
+    },
+    "StarterGui": {
+      "$className": "StarterGui",
+      "UI": {
+        "$path": "src/client/UI"
+      }
     }
   }
 }

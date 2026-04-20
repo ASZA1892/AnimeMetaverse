@@ -1,5 +1,5 @@
 -- src/server/Combat/CombatHandler.server.lua
--- Data-driven server-side combat handler
+-- Data-driven server-side combat handler with Guard/Parry (hardened)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -18,6 +18,7 @@ local CombatActions = require(ReplicatedStorage.Shared.Types.CombatActions)
 local Constants = require(ReplicatedStorage.Shared.Types.constants)
 local CombatStateMachine = require(script.Parent.CombatStateMachine)
 local MoveDefinitions = require(ReplicatedStorage.Shared.Types.MoveDefinitions)
+local GuardSystem = require(script.Parent.GuardSystem)
 
 -- Helper: find the character model from any descendant part
 local function findCharacterModelFromPart(part)
@@ -102,11 +103,18 @@ CombatRemote.OnServerEvent:Connect(function(player: Player, action: string, data
 	
 	-- Block handling
 	if action == CombatActions.ClientToServer.BLOCK_START then
-		CombatStateMachine.TrySetState(player, CombatStateMachine.States.Blocking)
+		GuardSystem.StartBlocking(player)
 		return
 	elseif action == CombatActions.ClientToServer.BLOCK_END then
-		if currentState == CombatStateMachine.States.Blocking then
-			CombatStateMachine.TrySetState(player, CombatStateMachine.States.Idle)
+		GuardSystem.StopBlocking(player)
+		return
+	end
+	
+	-- Parry attempt
+	if action == CombatActions.ClientToServer.PARRY then
+		local success = GuardSystem.RecordParry(player)
+		if not success and Constants.DEBUG then
+			print("  ↳ Parry on cooldown for " .. player.Name)
 		end
 		return
 	end
@@ -117,25 +125,27 @@ CombatRemote.OnServerEvent:Connect(function(player: Player, action: string, data
 	
 	local move = MoveDefinitions.GetMove(moveId)
 	if not move then
-		print("  ↳ Unknown move: " .. tostring(moveId))
+		if Constants.DEBUG then print("  ↳ Unknown move: " .. tostring(moveId)) end
 		return
 	end
 	
-	print("[Combat] " .. player.Name .. " | Move: " .. moveId .. " | State: " .. currentState)
+	if Constants.DEBUG then
+		print("[Combat] " .. player.Name .. " | Move: " .. moveId .. " | State: " .. currentState)
+	end
 	
 	-- Validate attack permission
 	if not CombatStateMachine.CanAttack(player) then
-		print("  ↳ Rejected: Cannot attack from state " .. currentState)
+		if Constants.DEBUG then print("  ↳ Rejected: Cannot attack from state " .. currentState) end
 		return
 	end
 	
 	-- Move-specific validations
 	if move.requiresDash and currentState ~= CombatStateMachine.States.Dashing then
-		print("  ↳ Rejected: Move requires dash")
+		if Constants.DEBUG then print("  ↳ Rejected: Move requires dash") end
 		return
 	end
 	if move.requiresAirborne and not CombatStateMachine.GetIsAirborne(player) then
-		print("  ↳ Rejected: Move requires airborne")
+		if Constants.DEBUG then print("  ↳ Rejected: Move requires airborne") end
 		return
 	end
 	
@@ -144,13 +154,13 @@ CombatRemote.OnServerEvent:Connect(function(player: Player, action: string, data
 		expiresAt = tick() + move.cooldown
 	})
 	if not success then
-		print("  ↳ Rejected: State transition failed: " .. tostring(reason))
+		if Constants.DEBUG then print("  ↳ Rejected: State transition failed: " .. tostring(reason)) end
 		return
 	end
 	
 	local character = player.Character
 	if not character or not character.PrimaryPart then
-		print("  ↳ Rejected: No character")
+		if Constants.DEBUG then print("  ↳ Rejected: No character") end
 		CombatStateMachine.ForceState(player, CombatStateMachine.States.Idle)
 		return
 	end
@@ -187,19 +197,42 @@ CombatRemote.OnServerEvent:Connect(function(player: Player, action: string, data
 	
 	if hitModel then
 		local hitHumanoid = hitModel:FindFirstChildOfClass("Humanoid")
+		local targetName = hitPlayer and hitPlayer.Name or hitModel.Name
 		
-		-- Apply damage
-		hitHumanoid:TakeDamage(move.damage)
+		-- Canonical attacker/target players
+		local attackerPlayer = player
+		local targetPlayer = hitPlayer  -- nil for NPCs
 		
-		-- Apply effects
-		applyEffects(hitModel, move, player)
+		-- Process through guard system
+		local finalDamage, wasParried, guardBroken = GuardSystem.ProcessHit(attackerPlayer, targetPlayer or hitModel, move.damage, move)
 		
-		-- Knockback
-		if move.knockback > 0 then
-			local hitRoot = hitModel.PrimaryPart or hitModel:FindFirstChild("HumanoidRootPart")
-			if hitRoot then
-				local knockbackDir = (hitRoot.Position - rootPart.Position).Unit
-				hitRoot.Velocity = knockbackDir * move.knockback * 10
+		if wasParried then
+			if Constants.DEBUG then print("  ↳ Parried by " .. targetName) end
+			return
+		end
+		
+		if finalDamage > 0 then
+			hitHumanoid:TakeDamage(finalDamage)
+			if Constants.DEBUG then print("  ↳ Hit! " .. targetName .. " took " .. finalDamage .. " damage from " .. moveId) end
+		else
+			if Constants.DEBUG then print("  ↳ Blocked! " .. targetName) end
+		end
+		
+		-- Knockback and effects (only if not parried)
+		if not wasParried then
+			if move.knockback > 0 then
+				local hitRoot = hitModel.PrimaryPart or hitModel:FindFirstChild("HumanoidRootPart")
+				if hitRoot then
+					local knockbackDir = (hitRoot.Position - rootPart.Position).Unit
+					local isTargetBlocking = targetPlayer and (CombatStateMachine.GetState(targetPlayer) == CombatStateMachine.States.Blocking)
+					local multiplier = isTargetBlocking and 0.5 or 1.0
+					hitRoot.Velocity = knockbackDir * move.knockback * 10 * multiplier
+				end
+			end
+			
+			local isTargetBlocking = targetPlayer and (CombatStateMachine.GetState(targetPlayer) == CombatStateMachine.States.Blocking)
+			if not isTargetBlocking then
+				applyEffects(hitModel, move, attackerPlayer)
 			end
 		end
 		
@@ -208,23 +241,32 @@ CombatRemote.OnServerEvent:Connect(function(player: Player, action: string, data
 			rootPart.Velocity = forward * move.lunge * 20
 		end
 		
-		-- Fire confirmation (CRITICAL: include moveId)
-		local hitData = {
-			attacker = player,
-			target = hitPlayer,
-			position = hitModel.PrimaryPart and hitModel.PrimaryPart.Position or Vector3.zero,
-			damage = move.damage,
-			moveId = moveId,
-			hitStop = Constants.HIT_STOP_DURATION,
-			serverTimestamp = tick()
-		}
-		CombatRemote:FireAllClients(CombatActions.ServerToClient.HIT_CONFIRMED, hitData)
-		
-		local targetName = hitPlayer and hitPlayer.Name or hitModel.Name
-		print("  ↳ Hit! " .. targetName .. " took " .. move.damage .. " damage from " .. moveId)
+		-- Fire HitConfirmed to involved clients only
+		if finalDamage > 0 or guardBroken then
+			local hitData = {
+				attacker = attackerPlayer,
+				target = targetPlayer,
+				position = hitModel.PrimaryPart and hitModel.PrimaryPart.Position or Vector3.zero,
+				damage = finalDamage,
+				moveId = moveId,
+				hitStop = Constants.HIT_STOP_DURATION,
+				serverTimestamp = tick(),
+				blocked = (targetPlayer and (CombatStateMachine.GetState(targetPlayer) == CombatStateMachine.States.Blocking)) or false,
+				guardBroken = guardBroken
+			}
+			
+			-- Notify attacker
+			if attackerPlayer then
+				CombatRemote:FireClient(attackerPlayer, CombatActions.ServerToClient.HIT_CONFIRMED, hitData)
+			end
+			-- Notify target
+			if targetPlayer then
+				CombatRemote:FireClient(targetPlayer, CombatActions.ServerToClient.HIT_CONFIRMED, hitData)
+			end
+		end
 	else
-		print("  ↳ Miss (" .. moveId .. ")")
+		if Constants.DEBUG then print("  ↳ Miss (" .. moveId .. ")") end
 	end
 end)
 
-print("✅ CombatHandler server initialized (data-driven)")
+print("✅ CombatHandler server initialized (hardened)")

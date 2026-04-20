@@ -1,5 +1,6 @@
 -- src/client/Combat/CombatController.client.lua
 -- Robust input detection for all strikes and kicks (context‑aware matcher)
+-- With Guard/Parry support
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -31,19 +32,19 @@ local function isAirborne()
 	return state == Enum.HumanoidStateType.Freefall or state == Enum.HumanoidStateType.Jumping
 end
 
--- Helper: build input table from current key states (for the new matcher)
+-- Helper: build input table from current key states
 local function buildInputTable()
 	return {
 		M1 = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1),
 		M2 = UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2),
 		E  = isKeyDown(Enum.KeyCode.E),
 		W  = isKeyDown(Enum.KeyCode.W),
-		A  = isKeyDown(Enum.KeyCode.A) or isKeyDown(Enum.KeyCode.D),  -- Treat A/D as 'A'
+		A  = isKeyDown(Enum.KeyCode.A) or isKeyDown(Enum.KeyCode.D),
 		S  = isKeyDown(Enum.KeyCode.S),
 		Crouch = isKeyDown(Enum.KeyCode.LeftControl) or isKeyDown(Enum.KeyCode.C),
 		Sprint = isKeyDown(Enum.KeyCode.LeftShift),
 		Q  = isKeyDown(Enum.KeyCode.Q),
-		Space = isAirborne(),   -- Special handling: Space means "airborne" for moves like Stomp
+		Space = isAirborne(),
 	}
 end
 
@@ -71,7 +72,7 @@ local function buildContext()
 		isClose = isClose,
 		isAirborne = isAirborne(),
 		isSprinting = isKeyDown(Enum.KeyCode.LeftShift) and (char and char.Humanoid and char.Humanoid.MoveDirection.Magnitude > 0),
-		isDashing = false,   -- Will be updated when dash system is added
+		isDashing = false,
 	}
 end
 
@@ -97,23 +98,24 @@ local function fireAttack()
 	end
 end
 
--- Input began (for block/parry and triggering attacks)
+-- Input began (block/parry, grab, attacks)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
 	
 	local key = input.KeyCode
 	local userInput = input.UserInputType
 	
-	-- Block/Parry
+	-- Block + Parry (F key)
 	if key == Enum.KeyCode.F then
 		CombatRemote:FireServer(CombatActions.ClientToServer.BLOCK_START)
+		CombatRemote:FireServer(CombatActions.ClientToServer.PARRY)
 		return
 	elseif key == Enum.KeyCode.G then
 		CombatRemote:FireServer(CombatActions.ClientToServer.GRAB_ATTEMPT)
 		return
 	end
 	
-	-- Attack triggers (M1, M2, E)
+	-- Attack triggers
 	if userInput == Enum.UserInputType.MouseButton1 then
 		fireAttack()
 	elseif userInput == Enum.UserInputType.MouseButton2 then
@@ -123,14 +125,14 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	end
 end)
 
--- Input ended (for block release)
+-- Input ended (block release)
 UserInputService.InputEnded:Connect(function(input, gameProcessed)
 	if input.KeyCode == Enum.KeyCode.F then
 		CombatRemote:FireServer(CombatActions.ClientToServer.BLOCK_END)
 	end
 end)
 
--- Hit feedback (hit-stop and camera jolt)
+-- Handle server events
 CombatRemote.OnClientEvent:Connect(function(action, data)
 	if action == CombatActions.ServerToClient.HIT_CONFIRMED then
 		if data.attacker == player then
@@ -165,7 +167,21 @@ CombatRemote.OnClientEvent:Connect(function(action, data)
 				end)
 			end
 		end
+		
+	elseif action == CombatActions.ServerToClient.PARRY_SUCCESS then
+		if data.parrier == player then
+			print("✅ You parried " .. data.attacker.Name .. "!")
+			-- TODO: Add screen flash / sound effect
+		elseif data.attacker == player then
+			print("❌ You got parried by " .. data.parrier.Name .. "!")
+		end
+		
+	elseif action == CombatActions.ServerToClient.GUARD_BROKEN then
+		if data.player == player then
+			print("💔 Guard broken!")
+			-- TODO: Add screen shake / sound effect
+		end
 	end
 end)
 
-print("✅ CombatController client initialized (context‑aware matcher)")
+print("✅ CombatController client initialized (with Guard/Parry)")
