@@ -1,30 +1,15 @@
 -- src/server/Combat/CombatHandler.server.lua
--- Robust data-driven server-side combat handler with Guard/Parry
--- Paste-ready: safe waits, safe requires, diagnostics, and same combat logic.
-
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 
--- Robust WaitForChild wrapper
 local function safeWait(parent, name, timeout)
-    if not parent then
-        warn(("safeWait: parent is nil for '%s'"):format(name))
-        return nil
-    end
+    if not parent then return nil end
     local ok, inst = pcall(function() return parent:WaitForChild(name, timeout) end)
-    if not ok then
-        warn(("safeWait: WaitForChild('%s') errored"):format(name))
-        return nil
-    end
-    if not inst then
-        warn(("safeWait: WaitForChild('%s') timed out"):format(name))
-        return nil
-    end
+    if not ok then return nil end
     return inst
 end
 
--- Locate shared/type modules
 local sharedFolder = safeWait(ReplicatedStorage, "Shared", 5)
 local typesFolder = safeWait(sharedFolder, "Types", 5)
 
@@ -35,58 +20,35 @@ local MoveDefinitionsModule = safeWait(typesFolder, "MoveDefinitions", 2)
 local CombatStateMachineModule = safeWait(script.Parent, "CombatStateMachine", 5)
 local GuardSystemModule = safeWait(script.Parent, "GuardSystem", 5)
 
-print("DEBUG: module presence:",
-      "Shared=", tostring(sharedFolder ~= nil),
-      "Types=", tostring(typesFolder ~= nil),
-      "CombatActions=", tostring(CombatActionsModule ~= nil),
-      "constants=", tostring(ConstantsModule ~= nil),
-      "MoveDefinitions=", tostring(MoveDefinitionsModule ~= nil),
-      "CombatStateMachine=", tostring(CombatStateMachineModule ~= nil),
-      "GuardSystem=", tostring(GuardSystemModule ~= nil)
-)
-
--- Safe require with diagnostics
-local function safeRequire(inst, name)
-    if not inst then
-        warn(("safeRequire: %s is nil"):format(name))
-        return nil
-    end
-    local className = (inst.ClassName and tostring(inst.ClassName)) or "no ClassName"
-    print(("DEBUG: safeRequire target %s -> ClassName=%s typeof=%s"):format(name, className, typeof(inst)))
-    if className ~= "ModuleScript" then
-        warn(("safeRequire: %s is not a ModuleScript (ClassName=%s)"):format(name, className))
-    end
+local function safeRequire(inst)
+    if not inst then return nil end
     local ok, result = pcall(require, inst)
     if not ok then
-        warn(("safeRequire: require(%s) failed: %s"):format(name, tostring(result)))
+        warn(("safeRequire: require failed for %s"):format(tostring(inst.Name or "unknown")))
         return nil
     end
     return result
 end
 
-local CombatActions = safeRequire(CombatActionsModule, "CombatActions")
-local Constants = safeRequire(ConstantsModule, "constants")
-local MoveDefinitions = safeRequire(MoveDefinitionsModule, "MoveDefinitions")
-local CombatStateMachine = safeRequire(CombatStateMachineModule, "CombatStateMachine")
-local GuardSystem = safeRequire(GuardSystemModule, "GuardSystem")
+local CombatActions = safeRequire(CombatActionsModule)
+local Constants = safeRequire(ConstantsModule)
+local MoveDefinitions = safeRequire(MoveDefinitionsModule)
+local CombatStateMachine = safeRequire(CombatStateMachineModule)
+local GuardSystem = safeRequire(GuardSystemModule)
 
--- Ensure CombatRemote exists on server (server-side fallback)
 local CombatRemote = ReplicatedStorage:FindFirstChild("CombatRemote")
 if not CombatRemote then
     CombatRemote = Instance.new("RemoteEvent")
     CombatRemote.Name = "CombatRemote"
     CombatRemote.Parent = ReplicatedStorage
-    warn("CombatHandler: created CombatRemote fallback in ReplicatedStorage")
 end
 
--- Debug helper
 local function dbg(...)
     if Constants and Constants.DEBUG then
         print(...)
     end
 end
 
--- Simple per-player rate limiter
 local lastRpcAt = setmetatable({}, { __mode = "k" })
 local RPC_MIN_INTERVAL = 0.05
 
@@ -100,7 +62,6 @@ local function canProcessRpc(player)
     return true
 end
 
--- Helper: find the character model from any descendant part
 local function findCharacterModelFromPart(part)
     local node = part
     local depth = 0
@@ -116,7 +77,6 @@ local function findCharacterModelFromPart(part)
     return nil
 end
 
--- Apply move-specific effects
 local function applyEffects(targetModel, move, attacker)
     local hum = targetModel:FindFirstChildOfClass("Humanoid")
     if not hum then return end
@@ -163,14 +123,9 @@ local function applyEffects(targetModel, move, attacker)
     end
 end
 
--- Main remote listener
 CombatRemote.OnServerEvent:Connect(function(player, action, data)
-    -- Basic validation and rate limiting
     if not player or not player:IsA("Player") then return end
-    if not canProcessRpc(player) then
-        dbg("RPC rate limited for", player.Name)
-        return
-    end
+    if not canProcessRpc(player) then return end
 
     if not CombatStateMachine or not MoveDefinitions or not GuardSystem or not CombatActions then
         warn("CombatHandler: missing core modules, aborting RPC")
@@ -179,12 +134,6 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 
     local currentState = CombatStateMachine.GetState(player)
 
-    -- Debug trace
-    dbg(("--- CombatTrace start for %s ---"):format(player.Name))
-    dbg("action:", tostring(action))
-    dbg("data type:", typeof(data), "moveId:", tostring(data and data.moveId))
-
-    -- Block handling
     if action == CombatActions.ClientToServer.BLOCK_START then
         GuardSystem.StartBlocking(player)
         return
@@ -193,7 +142,6 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
         return
     end
 
-    -- Parry attempt
     if action == CombatActions.ClientToServer.PARRY then
         local ok = GuardSystem.RecordParry(player)
         if not ok then
@@ -202,76 +150,42 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
         return
     end
 
-    -- Attack handling
-    if type(data) ~= "table" then
-        dbg("Rejected: invalid payload type")
-        return
-    end
+    if type(data) ~= "table" then return end
 
     local moveId = data.moveId
-    if type(moveId) ~= "string" then
-        dbg("Rejected: invalid moveId")
-        return
-    end
+    if type(moveId) ~= "string" then return end
 
     local move = MoveDefinitions.GetMove(moveId)
-    if not move then
-        dbg("Unknown move:", moveId)
-        return
-    end
+    if not move then return end
 
-    dbg("[Combat] " .. player.Name .. " | Move: " .. moveId .. " | State: " .. tostring(currentState))
+    if not CombatStateMachine.CanAttack(player) then return end
 
-    -- Validate attack permission
-    if not CombatStateMachine.CanAttack(player) then
-        dbg("Rejected: Cannot attack from state", tostring(currentState))
-        return
-    end
+    if move.requiresDash and currentState ~= CombatStateMachine.States.Dashing then return end
+    if move.requiresAirborne and not CombatStateMachine.GetIsAirborne(player) then return end
 
-    -- Move-specific validations
-    if move.requiresDash and currentState ~= CombatStateMachine.States.Dashing then
-        dbg("Rejected: Move requires dash")
-        return
-    end
-    if move.requiresAirborne and not CombatStateMachine.GetIsAirborne(player) then
-        dbg("Rejected: Move requires airborne")
-        return
-    end
-
-    -- Transition to Attacking state
     local ok, reason = CombatStateMachine.TrySetState(player, CombatStateMachine.States.Attacking, {
         expiresAt = tick() + (move.cooldown or 0)
     })
-    if not ok then
-        dbg("Rejected: State transition failed:", tostring(reason))
-        return
-    end
+    if not ok then return end
 
     local character = player.Character
     if not character or not character.PrimaryPart then
-        dbg("Rejected: No character")
         CombatStateMachine.ForceState(player, CombatStateMachine.States.Idle)
         return
     end
 
     local rootPart = character.PrimaryPart
-
-    -- Calculate hitbox position
     local forward = rootPart.CFrame.LookVector
     local offset = forward * ((move.range or 3) / 2)
     local center = rootPart.Position + offset
     local boxCFrame = CFrame.new(center)
 
-    -- Overlap detection
     local overlapParams = OverlapParams.new()
     overlapParams.FilterType = Enum.RaycastFilterType.Exclude
     overlapParams.FilterDescendantsInstances = {character}
 
     local partsInBox = Workspace:GetPartBoundsInBox(boxCFrame, move.hitboxSize or Vector3.new(3,3,3), overlapParams)
 
-    dbg("partsInBox count:", #partsInBox)
-
-    -- Find first valid target
     local hitModel, hitPlayer
     for _, part in ipairs(partsInBox) do
         local model = findCharacterModelFromPart(part)
@@ -285,17 +199,12 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
         end
     end
 
-    if not hitModel then
-        dbg("Miss:", moveId)
-        return
-    end
+    if not hitModel then return end
 
-    -- Re-check range to avoid edge false positives
     local hitRoot = hitModel.PrimaryPart or hitModel:FindFirstChild("HumanoidRootPart")
     if hitRoot then
         local dist = (hitRoot.Position - rootPart.Position).Magnitude
         if dist > ((move.range or 3) + 0.5) then
-            dbg("Rejected: target out of range", dist)
             return
         end
     end
@@ -303,7 +212,7 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
     local hitHumanoid = hitModel:FindFirstChildOfClass("Humanoid")
     local targetName = hitPlayer and hitPlayer.Name or hitModel.Name
 
-    -- Process through guard system
+    -- Normal ProcessHit call
     local finalDamage, wasParried, guardBroken = GuardSystem.ProcessHit(player, hitPlayer or hitModel, move.damage or 0, move)
 
     if wasParried then
@@ -316,15 +225,12 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
         return
     end
 
-    -- Apply damage if any
     if finalDamage > 0 and hitHumanoid and hitHumanoid.Parent then
         hitHumanoid:TakeDamage(finalDamage)
-        dbg("Hit!", targetName, "took", finalDamage, "from", moveId)
     else
         dbg("Blocked!", targetName)
     end
 
-    -- Knockback and effects (only if not parried)
     if not wasParried then
         if move.knockback and move.knockback > 0 and hitRoot then
             local dirVec = hitRoot.Position - rootPart.Position
@@ -340,12 +246,10 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
         end
     end
 
-    -- Lunge (attacker)
     if move.lunge then
         rootPart.Velocity = forward * (move.lunge * 20)
     end
 
-    -- Fire HitConfirmed to involved clients only
     if finalDamage > 0 or guardBroken then
         local hitData = {
             attacker = player,

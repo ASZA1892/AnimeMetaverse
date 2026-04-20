@@ -2,45 +2,58 @@
   "name": "AnimeMetaverse",
   "tree": {
     "$className": "DataModel",
+
     "ReplicatedStorage": {
       "$className": "ReplicatedStorage",
+
       "CombatRemote": {
         "$className": "RemoteEvent"
       },
+
       "Shared": {
         "$path": "src/shared"
       }
     },
+
     "ServerScriptService": {
       "$className": "ServerScriptService",
+
       "Combat": {
         "$className": "Folder",
+
         "GuardSystem": {
           "$path": "src/server/Combat/GuardSystem.server.lua"
         },
+
         "CombatHandler": {
           "$path": "src/server/Combat/CombatHandler.server.lua"
         },
+
         "CombatStateMachine": {
-          "$path": "src/server/Combat/CombatStateMachine.server.lua",
-          "$className": "ModuleScript"
+          "$path": "src/server/Combat/CombatStateMachine.server.lua"
         }
       }
     },
+
     "StarterPlayer": {
       "$className": "StarterPlayer",
+
       "StarterPlayerScripts": {
         "$className": "StarterPlayerScripts",
+
         "Combat": {
           "$path": "src/client/Combat"
         },
+
         "Animations": {
           "$path": "src/client/Animations"
         }
       }
     },
+
     "StarterGui": {
       "$className": "StarterGui",
+
       "UI": {
         "$path": "src/client/UI"
       }
