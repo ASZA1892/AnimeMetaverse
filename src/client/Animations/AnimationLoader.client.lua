@@ -2,6 +2,9 @@
 -- Safe animation loader with R15/R6 fallback
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local AnimationLoader = {}
+
 -- Safely require CombatActions (won't crash if missing)
 local CombatActions
 local ok, result = pcall(function()
@@ -112,11 +115,14 @@ local function safeLoadAndPlay(moveId)
     return true
 end
 
-local function playAttackAnimation(moveId)
+-- Public API: play an attack animation immediately on the client
+function AnimationLoader.playAttackAnimation(moveId)
+    if not moveId then return end
     print("[AnimationLoader] Playing animation for: " .. tostring(moveId))
     safeLoadAndPlay(moveId)
 end
 
+-- Keep existing server-driven playback (HIT_CONFIRMED) behavior
 local CombatRemote = ReplicatedStorage:WaitForChild("CombatRemote")
 CombatRemote.OnClientEvent:Connect(function(action, data)
     local hitAction = (CombatActions and CombatActions.ServerToClient and CombatActions.ServerToClient.HIT_CONFIRMED) or "HitConfirmed"
@@ -128,9 +134,11 @@ CombatRemote.OnClientEvent:Connect(function(action, data)
             or (type(attacker) == "number" and attacker == player.UserId)
             or (type(attacker) == "string" and attacker == player.Name)
         if attackerIsLocal then
-            playAttackAnimation(data.moveId)
+            AnimationLoader.playAttackAnimation(data.moveId)
         end
     end
 end)
 
 print("✅ AnimationLoader initialized (safe mode)")
+
+return AnimationLoader
