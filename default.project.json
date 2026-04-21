@@ -6,10 +6,6 @@
     "ReplicatedStorage": {
       "$className": "ReplicatedStorage",
 
-      "CombatRemote": {
-        "$className": "RemoteEvent"
-      },
-
       "Shared": {
         "$path": "src/shared"
       }
@@ -21,16 +17,16 @@
       "Combat": {
         "$className": "Folder",
 
-        "GuardSystem": {
-          "$path": "src/server/Combat/GuardSystem.server.lua"
-        },
-
         "CombatHandler": {
           "$path": "src/server/Combat/CombatHandler.server.lua"
         },
 
         "CombatStateMachine": {
-          "$path": "src/server/Combat/CombatStateMachine.server.lua"
+          "$path": "src/server/Combat/CombatStateMachine.lua"
+        },
+
+        "GuardSystem": {
+          "$path": "src/server/Combat/GuardSystem.lua"
         }
       }
     },
