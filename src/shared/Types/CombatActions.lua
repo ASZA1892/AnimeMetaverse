@@ -28,6 +28,7 @@ CombatActions.ServerToClient = {
     GUARD_UPDATE = "GuardUpdate",
     CLASH_START = "ClashStart",
     CLASH_END = "ClashEnd",
+    DASH_CONFIRMED = "DashConfirmed",
 }
 
 return CombatActions

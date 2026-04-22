@@ -27,6 +27,10 @@
 
         "GuardSystem": {
           "$path": "src/server/Combat/GuardSystem.lua"
+        },
+
+        "DashHandler": {
+          "$path": "src/server/Combat/DashHandler.lua"
         }
       }
     },
