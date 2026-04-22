@@ -31,6 +31,14 @@
 
         "DashHandler": {
           "$path": "src/server/Combat/DashHandler.lua"
+        },
+
+        "SubstitutionHandler": {
+          "$path": "src/server/Combat/SubstitutionHandler.lua"
+        },
+
+        "GrappleHandler": {
+          "$path": "src/server/Combat/GrappleHandler.lua"
         }
       }
     },

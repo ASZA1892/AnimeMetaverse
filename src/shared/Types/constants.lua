@@ -1,16 +1,15 @@
 -- constants.lua
 -- Single source of truth for all Phase 1 numbers
--- Change values here only — never hardcode numbers in other scripts
 
 local Constants = {}
 
 -- Debug
-Constants.DEBUG = true -- Set to false when releasing
+Constants.DEBUG = true
 
 -- Combat timing
-Constants.HIT_STOP_DURATION = 0.05 -- seconds
-Constants.PARRY_WINDOW = 0.2 -- seconds
-Constants.ATTACK_COOLDOWN = 0.3 -- seconds after attack before Idle
+Constants.HIT_STOP_DURATION = 0.05
+Constants.PARRY_WINDOW = 0.2
+Constants.ATTACK_COOLDOWN = 0.15 -- was 0.3, faster combos
 
 -- Damage values
 Constants.JAB_DAMAGE = 10
@@ -21,8 +20,8 @@ Constants.GUARD_BREAK_DAMAGE = 20
 
 -- Stamina
 Constants.MAX_STAMINA = 100
-Constants.STAMINA_REGEN_RATE = 15 -- per second standing
-Constants.STAMINA_REGEN_SPRINT = 5 -- per second sprinting
+Constants.STAMINA_REGEN_RATE = 15
+Constants.STAMINA_REGEN_SPRINT = 5
 Constants.DASH_STAMINA_QUICK = 10
 Constants.DASH_STAMINA_MEDIUM = 18
 Constants.DASH_STAMINA_FULL = 28
@@ -30,19 +29,19 @@ Constants.SUBSTITUTION_MIN_STAMINA = 20
 
 -- Guard
 Constants.MAX_GUARD = 100
-Constants.GUARD_DEPLETION_PER_HIT = 20   -- Guard bar lost per blocked hit
-Constants.GUARD_BREAK_STUN = 2           -- seconds stunned when guard breaks
-Constants.GUARD_REGEN_RATE = 25          -- per second
-Constants.GUARD_REGEN_DELAY = 2          -- seconds before regen starts
-Constants.CHIP_DAMAGE_PERCENT = 0.15     -- 15% damage bleeds through block
-Constants.PARRY_STUN_DURATION = 1.5      -- Stun applied to attacker on successful parry
-Constants.PARRY_COOLDOWN = 1.0           -- Seconds between parry attempts
+Constants.GUARD_DEPLETION_PER_HIT = 20
+Constants.GUARD_BREAK_STUN = 2
+Constants.GUARD_REGEN_RATE = 25
+Constants.GUARD_REGEN_DELAY = 2
+Constants.CHIP_DAMAGE_PERCENT = 0.15
+Constants.PARRY_STUN_DURATION = 1.5
+Constants.PARRY_COOLDOWN = 1.0
 
 -- Dash
-Constants.DASH_IFRAMES_QUICK = 0.1
+Constants.DASH_IFRAMES_QUICK = 0.08 -- was 0.1
 Constants.DASH_IFRAMES_MEDIUM = 0.15
 Constants.DASH_IFRAMES_FULL = 0.2
-Constants.DASH_COOLDOWN = 0.8
+Constants.DASH_COOLDOWN = 0.5 -- was 0.8, faster combos
 
 -- Hitbox sizes
 Constants.JAB_RANGE = 5
@@ -56,6 +55,12 @@ Constants.CAMERA_JOLT_DURATION = 0.05
 Constants.MOMENTUM_PER_HIT = 15
 Constants.MOMENTUM_ON_MISS = -20
 Constants.MOMENTUM_MAX = 100
-Constants.MOMENTUM_COMBO_TIMEOUT = 2 -- seconds
+Constants.MOMENTUM_COMBO_TIMEOUT = 2
+
+-- Grapple
+Constants.GRAPPLE_COOLDOWN = 6
+Constants.GRAPPLE_RANGE = 3.5
+Constants.GRAPPLE_DISABLE_DURATION = 1.5
+Constants.GRAPPLE_THROW_DISTANCE = 15
 
 return Constants

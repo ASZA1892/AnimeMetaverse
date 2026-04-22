@@ -16,6 +16,7 @@ CombatActions.ClientToServer = {
     CHARGE_RELEASE = "ChargeRelease",
     PHASE_STEP = "PhaseStep",
     SUBSTITUTION = "Substitution",
+    GRAB_RELEASE = "GrabRelease",
 }
 
 -- Server fires these TO clients
@@ -29,6 +30,11 @@ CombatActions.ServerToClient = {
     CLASH_START = "ClashStart",
     CLASH_END = "ClashEnd",
     DASH_CONFIRMED = "DashConfirmed",
+    SUBSTITUTION_CONFIRMED = "SubstitutionConfirmed",
+    SUBSTITUTION_FAILED = "SubstitutionFailed",
+    GRAPPLE_CONFIRMED = "GrappleConfirmed",
+    GRAPPLE_CAUGHT = "GrappleCaught",
+    GRAPPLE_RELEASED = "GrappleReleased",
 }
 
 return CombatActions
