@@ -8,7 +8,7 @@ local CombatActions = require(ReplicatedStorage.Shared.Types.CombatActions)
 local GrappleHandler = {}
 
 local GRAPPLE_COOLDOWN = Constants.GRAPPLE_COOLDOWN or 6
-local GRAPPLE_RANGE = Constants.GRAPPLE_RANGE or 3.5
+local GRAPPLE_RANGE = Constants.GRAPPLE_RANGE or 5
 local GRAPPLE_DISABLE_DURATION = Constants.GRAPPLE_DISABLE_DURATION or 1.5
 local GRAPPLE_THROW_DISTANCE = Constants.GRAPPLE_THROW_DISTANCE or 15
 
@@ -23,9 +23,7 @@ local function dbg(...)
 end
 
 local function getRoot(character)
-	if not character then
-		return nil
-	end
+	if not character then return nil end
 	return character.PrimaryPart or character:FindFirstChild("HumanoidRootPart")
 end
 
@@ -33,16 +31,12 @@ local function setCombatState(CombatStateMachine, player, stateName, meta)
 	if not CombatStateMachine or not CombatStateMachine.ForceState or not player then
 		return false
 	end
-	local ok = CombatStateMachine.ForceState(player, stateName, meta)
-	return ok == true
+	CombatStateMachine.ForceState(player, stateName, meta)
+	return true
 end
 
 local function setDisabledState(CombatStateMachine, player, expiresAt)
-	-- Some projects use "Disabled", others use "Stunned"; attempt requested state first.
-	if setCombatState(CombatStateMachine, player, "Disabled", { expiresAt = expiresAt }) then
-		return
-	end
-	setCombatState(CombatStateMachine, player, "Stunned", { expiresAt = expiresAt })
+	CombatStateMachine.ForceState(player, "Disabled", { expiresAt = expiresAt })
 end
 
 local function clearPair(attacker, target)
@@ -58,12 +52,8 @@ end
 
 local function releasePair(attacker, target, CombatStateMachine, token)
 	local pair = activeByAttacker[attacker]
-	if not pair or pair.target ~= target then
-		return
-	end
-	if token and pair.token ~= token then
-		return
-	end
+	if not pair or pair.target ~= target then return end
+	if token and pair.token ~= token then return end
 
 	clearPair(attacker, target)
 	setCombatState(CombatStateMachine, attacker, "Idle")
@@ -73,9 +63,7 @@ end
 local function findNearestTarget(attacker)
 	local attackerCharacter = attacker.Character
 	local attackerRoot = getRoot(attackerCharacter)
-	if not attackerRoot then
-		return nil
-	end
+	if not attackerRoot then return nil end
 
 	local nearestPlayer = nil
 	local nearestDistance = math.huge
@@ -86,6 +74,7 @@ local function findNearestTarget(attacker)
 			local candidateRoot = getRoot(candidateCharacter)
 			if candidateRoot and candidateCharacter and candidateCharacter:IsDescendantOf(Workspace) then
 				local distance = (candidateRoot.Position - attackerRoot.Position).Magnitude
+				dbg("Checking", candidate.Name, "distance:", distance, "range:", GRAPPLE_RANGE)
 				if distance <= GRAPPLE_RANGE and distance < nearestDistance then
 					nearestDistance = distance
 					nearestPlayer = candidate
@@ -99,9 +88,7 @@ end
 
 function GrappleHandler.ProcessGrapple(player, data, CombatStateMachine, CombatRemote)
 	local _ = data
-	if not player or not CombatStateMachine or not CombatRemote then
-		return
-	end
+	if not player or not CombatStateMachine or not CombatRemote then return end
 
 	local state = CombatStateMachine.GetState(player)
 	if state ~= "Idle" and state ~= "Attacking" then
@@ -134,7 +121,10 @@ function GrappleHandler.ProcessGrapple(player, data, CombatStateMachine, CombatR
 	lastGrappleAt[player] = now
 
 	local expiresAt = now + GRAPPLE_DISABLE_DURATION
-	setCombatState(CombatStateMachine, player, "Grappling", { expiresAt = expiresAt, targetUserId = target.UserId })
+	setCombatState(CombatStateMachine, player, "Grappling", {
+		expiresAt = expiresAt,
+		targetUserId = target.UserId
+	})
 	setDisabledState(CombatStateMachine, target, expiresAt)
 
 	local token = tostring(now) .. "_" .. tostring(player.UserId) .. "_" .. tostring(target.UserId)
@@ -149,13 +139,15 @@ function GrappleHandler.ProcessGrapple(player, data, CombatStateMachine, CombatR
 		token = token,
 	}
 
-	CombatRemote:FireClient(player, CombatActions.ServerToClient.GRAPPLE_CONFIRMED or "GRAPPLE_CONFIRMED", {
+	dbg(player.Name, "grapple confirmed on", target.Name)
+
+	CombatRemote:FireClient(player, CombatActions.ServerToClient.GRAPPLE_CONFIRMED, {
 		target = target,
 		targetUserId = target.UserId,
 		targetName = target.Name,
 		duration = GRAPPLE_DISABLE_DURATION,
 	})
-	CombatRemote:FireClient(target, CombatActions.ServerToClient.GRAPPLE_CAUGHT or "GRAPPLE_CAUGHT", {
+	CombatRemote:FireClient(target, CombatActions.ServerToClient.GRAPPLE_CAUGHT, {
 		attacker = player,
 		attackerUserId = player.UserId,
 		attackerName = player.Name,
@@ -170,12 +162,11 @@ end
 function GrappleHandler.ProcessGrappleRelease(player, data, CombatStateMachine, CombatRemote)
 	local _ = data
 	local _2 = CombatRemote
-	if not player or not CombatStateMachine then
-		return
-	end
+	if not player or not CombatStateMachine then return end
 
 	local pair = activeByAttacker[player]
 	if not pair then
+		dbg(player.Name, "release: no active grapple")
 		return
 	end
 
@@ -189,6 +180,7 @@ function GrappleHandler.ProcessGrappleRelease(player, data, CombatStateMachine, 
 	local targetRoot = getRoot(target.Character)
 	if attackerRoot and targetRoot then
 		targetRoot.AssemblyLinearVelocity = attackerRoot.CFrame.LookVector * (GRAPPLE_THROW_DISTANCE * 10)
+		dbg(player.Name, "threw", target.Name)
 	end
 
 	releasePair(player, target, CombatStateMachine, pair.token)

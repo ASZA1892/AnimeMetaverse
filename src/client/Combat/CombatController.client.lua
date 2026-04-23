@@ -3,7 +3,6 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local CombatRemote = ReplicatedStorage:WaitForChild("CombatRemote", 10)
@@ -13,13 +12,21 @@ local CombatActions = require(ReplicatedStorage.Shared.Types.CombatActions)
 local Constants = require(ReplicatedStorage.Shared.Types.constants)
 local MoveDefinitions = require(ReplicatedStorage.Shared.Types.MoveDefinitions)
 
+local CameraShaker = nil
+do
+	local ok, mod = pcall(require, script.Parent.CameraShaker)
+	if ok and mod then
+		CameraShaker = mod
+	else
+		warn("CombatController: CameraShaker not found")
+	end
+end
+
 local function safeRequireCandidates(candidates)
 	for _, inst in ipairs(candidates) do
 		if inst and typeof(inst) == "Instance" then
 			local ok, mod = pcall(require, inst)
-			if ok and mod then
-				return mod
-			end
+			if ok and mod then return mod end
 		end
 	end
 	return nil
@@ -139,6 +146,12 @@ local function findMoveForCurrentInput()
 	return move and move.id or nil
 end
 
+local function shake(intensity, duration)
+	if CameraShaker then
+		CameraShaker.Shake(intensity, duration)
+	end
+end
+
 local function fireAttack()
 	local moveId = findMoveForCurrentInput()
 	if not moveId then
@@ -147,9 +160,7 @@ local function fireAttack()
 	end
 
 	if AnimationLoader and type(AnimationLoader.playAttackAnimation) == "function" then
-		pcall(function()
-			AnimationLoader.playAttackAnimation(moveId)
-		end)
+		pcall(function() AnimationLoader.playAttackAnimation(moveId) end)
 	end
 
 	local mouse = player:GetMouse()
@@ -197,6 +208,7 @@ UserInputService.InputEnded:Connect(function(input, gameProcessed)
 end)
 
 CombatRemote.OnClientEvent:Connect(function(action, data)
+
 	if action == CombatActions.ServerToClient.HIT_CONFIRMED then
 		if data.attacker == player then
 			local character = player.Character
@@ -210,45 +222,35 @@ CombatRemote.OnClientEvent:Connect(function(action, data)
 					end
 				end)
 			end
-			local camera = Workspace.CurrentCamera
-			if camera then
-				local originalCFrame = camera.CFrame
-				local joltOffset = CFrame.new(0, Constants.CAMERA_JOLT_STRENGTH, Constants.CAMERA_JOLT_STRENGTH * 2)
-				local tweenInfo = TweenInfo.new(
-					Constants.CAMERA_JOLT_DURATION,
-					Enum.EasingStyle.Quad,
-					Enum.EasingDirection.Out
-				)
-				local tween = TweenService:Create(camera, tweenInfo, {CFrame = originalCFrame * joltOffset})
-				tween:Play()
-				tween.Completed:Connect(function()
-					if camera then
-						camera.CFrame = originalCFrame
-					end
-				end)
-			end
+			shake(0.4, 0.15)
 		end
 
 	elseif action == CombatActions.ServerToClient.PARRY_SUCCESS then
 		if data.parrier == player then
 			print("✅ You parried " .. data.attacker.Name .. "!")
+			shake(0.6, 0.2)
 		elseif data.attacker == player then
 			print("❌ You got parried by " .. data.parrier.Name .. "!")
+			shake(0.8, 0.25)
 		end
 
 	elseif action == CombatActions.ServerToClient.GUARD_BROKEN then
 		if data.player == player then
 			print("💔 Guard broken!")
+			shake(1.0, 0.3)
 		end
 
 	elseif action == CombatActions.ServerToClient.GRAPPLE_CONFIRMED then
 		print("✅ Grapple confirmed! Grabbed: " .. tostring(data.targetName))
+		shake(0.3, 0.12)
 
 	elseif action == CombatActions.ServerToClient.GRAPPLE_CAUGHT then
 		print("⚠️ You were grabbed by: " .. tostring(data.attackerName))
+		shake(0.7, 0.2)
 
 	elseif action == CombatActions.ServerToClient.GRAPPLE_RELEASED then
 		print("🔓 Grapple released")
+
 	end
 end)
 
