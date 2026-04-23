@@ -22,67 +22,6 @@ do
 	end
 end
 
-local function safeRequireCandidates(candidates)
-	for _, inst in ipairs(candidates) do
-		if inst and typeof(inst) == "Instance" then
-			local ok, mod = pcall(require, inst)
-			if ok and mod then return mod end
-		end
-	end
-	return nil
-end
-
-local AnimationLoader = nil
-do
-	local candidates = {}
-	local shared = ReplicatedStorage:FindFirstChild("Shared")
-	if shared then
-		local animFolder = shared:FindFirstChild("Animations")
-		if animFolder then
-			local c = animFolder:FindFirstChild("AnimationLoader")
-			if c then table.insert(candidates, c) end
-		end
-	end
-	local altAnimFolder = ReplicatedStorage:FindFirstChild("Animations")
-	if altAnimFolder then
-		local c = altAnimFolder:FindFirstChild("AnimationLoader")
-		if c then table.insert(candidates, c) end
-	end
-	do
-		local current = script
-		for i = 1, 8 do
-			if not current or not current.Parent then break end
-			current = current.Parent
-			if current.Name == "StarterPlayerScripts" then
-				local animFolder = current:FindFirstChild("Animations")
-				if animFolder then
-					local lm = animFolder:FindFirstChild("AnimationLoader")
-					if lm then table.insert(candidates, lm) end
-				end
-				break
-			end
-		end
-	end
-	do
-		local function findRec(parent)
-			for _, child in ipairs(parent:GetChildren()) do
-				if child.Name == "AnimationLoader" and child.ClassName == "ModuleScript" then
-					return child
-				end
-				local found = findRec(child)
-				if found then return found end
-			end
-			return nil
-		end
-		local found = findRec(ReplicatedStorage)
-		if found then table.insert(candidates, found) end
-	end
-	AnimationLoader = safeRequireCandidates(candidates)
-	if not AnimationLoader then
-		warn("CombatController: AnimationLoader not found — using fallback")
-	end
-end
-
 local player = Players.LocalPlayer
 
 local function isKeyDown(keyCode)
@@ -159,9 +98,8 @@ local function fireAttack()
 		return
 	end
 
-	if AnimationLoader and type(AnimationLoader.playAttackAnimation) == "function" then
-		pcall(function() AnimationLoader.playAttackAnimation(moveId) end)
-	end
+	-- Animations disabled until custom Moon Animator anims are ready
+	-- if AnimationLoader then AnimationLoader.playAttackAnimation(moveId) end
 
 	local mouse = player:GetMouse()
 	local aimPosition = mouse.Hit.Position
@@ -223,6 +161,14 @@ CombatRemote.OnClientEvent:Connect(function(action, data)
 				end)
 			end
 			shake(0.4, 0.15)
+		end
+
+	elseif action == CombatActions.ServerToClient.KNOCKBACK then
+		local char = player.Character
+		local root = char and char:FindFirstChild("HumanoidRootPart")
+		if root and data and data.velocity then
+			root.AssemblyLinearVelocity = data.velocity
+			shake(0.5, 0.15)
 		end
 
 	elseif action == CombatActions.ServerToClient.PARRY_SUCCESS then

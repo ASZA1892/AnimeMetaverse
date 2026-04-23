@@ -35,6 +35,7 @@ CombatActions.ServerToClient = {
     GRAPPLE_CONFIRMED = "GrappleConfirmed",
     GRAPPLE_CAUGHT = "GrappleCaught",
     GRAPPLE_RELEASED = "GrappleReleased",
+    KNOCKBACK = "Knockback",
 }
 
 return CombatActions

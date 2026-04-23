@@ -369,7 +369,15 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 			local okUnit, knockbackDir = pcall(function() return dirVec.Unit end)
 			if okUnit and knockbackDir then
 				local multiplier = (hitPlayer and CombatStateMachine.GetState(hitPlayer) == "Blocking") and 0.5 or 1.0
-				hitRoot.AssemblyLinearVelocity = knockbackDir * (move.knockback * 10) * multiplier
+				local knockbackVelocity = knockbackDir * (move.knockback * 10) * multiplier
+				-- Apply server side
+				hitRoot.AssemblyLinearVelocity = knockbackVelocity
+				-- Also fire to target client for local application
+				if hitPlayer then
+					CombatRemote:FireClient(hitPlayer, CombatActions.ServerToClient.KNOCKBACK, {
+						velocity = knockbackVelocity,
+					})
+				end
 			end
 		end
 

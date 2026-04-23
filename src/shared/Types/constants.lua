@@ -45,7 +45,7 @@ Constants.DASH_COOLDOWN = 0.6 -- was 0.8, faster combos
 
 -- Hitbox sizes
 Constants.JAB_RANGE = 5
-Constants.JAB_HITBOX = Vector3.new(6, 4, 6)
+Constants.JAB_HITBOX = Vector3.new(3.5, 4, 4)
 
 -- Camera
 Constants.CAMERA_JOLT_STRENGTH = 0.2
