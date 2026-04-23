@@ -41,7 +41,7 @@ Constants.PARRY_COOLDOWN = 1.0
 Constants.DASH_IFRAMES_QUICK = 0.08 -- was 0.1
 Constants.DASH_IFRAMES_MEDIUM = 0.15
 Constants.DASH_IFRAMES_FULL = 0.2
-Constants.DASH_COOLDOWN = 0.5 -- was 0.8, faster combos
+Constants.DASH_COOLDOWN = 0.6 -- was 0.8, faster combos
 
 -- Hitbox sizes
 Constants.JAB_RANGE = 5
@@ -59,7 +59,7 @@ Constants.MOMENTUM_COMBO_TIMEOUT = 2
 
 -- Grapple
 Constants.GRAPPLE_COOLDOWN = 6
-Constants.GRAPPLE_RANGE = 3.5
+Constants.GRAPPLE_RANGE = 4.5
 Constants.GRAPPLE_DISABLE_DURATION = 1.5
 Constants.GRAPPLE_THROW_DISTANCE = 15
 
