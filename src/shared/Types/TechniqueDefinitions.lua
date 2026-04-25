@@ -113,6 +113,7 @@ TechniqueDefinitions.Passives = {
 --   aoe            bool     — true = hits multiple targets
 --   velocityScaling bool    — momentum damage scaling active
 --   isFinal        bool     — true = requires setup conditions
+--   vitalNodes     {string} — ordered node priorities for interaction checks
 --   setup          table?   — Final only: one condition must be true to fire
 --   animationId    string   — placeholder until Moon Animator
 --
@@ -126,6 +127,42 @@ TechniqueDefinitions.Passives = {
 -- ─────────────────────────────────────────────
 
 local Techniques = {}
+
+local VitalNodeSets = {
+    Melee = { "Elemental", "Movement", "Guard", "Vision", "Chakra" },
+    Projectile = { "Elemental", "Vision", "Chakra" },
+    Wide = { "Movement", "Guard" },
+    Dash = { "Movement" },
+    None = {},
+}
+
+local function resolveVitalNodes(technique)
+    if technique.isFinal then
+        return VitalNodeSets.Wide
+    end
+
+    if technique.aoe then
+        return VitalNodeSets.Wide
+    end
+
+    local tierData = technique.mastered or technique.refined or technique.raw
+    if tierData and tierData.range == 0 then
+        return VitalNodeSets.None
+    end
+
+    local lowerInput = string.lower(technique.input or "")
+    local isDash = string.find(lowerInput, "dash", 1, true) ~= nil
+        or (technique.velocityScaling == true and technique.aoe == false)
+    if isDash then
+        return VitalNodeSets.Dash
+    end
+
+    if technique.projectile then
+        return VitalNodeSets.Projectile
+    end
+
+    return VitalNodeSets.Melee
+end
 
 -- ═══════════════════════════════════════════
 -- FIRE TECHNIQUES
@@ -978,6 +1015,10 @@ Techniques["grass_world_tree"] = {
                    .. "Absorbs all incoming projectiles. Living Earth passive active across entire domain.",
     },
 }
+
+for _, technique in pairs(Techniques) do
+    technique.vitalNodes = resolveVitalNodes(technique)
+end
 
 -- ─────────────────────────────────────────────
 -- LOOKUP HELPERS

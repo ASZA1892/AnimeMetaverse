@@ -60,6 +60,14 @@
         "ElementInteractions": {
           "$path": "src/server/Element/ElementInteractions.lua"
         }
+      },
+
+      "VitalFive": {
+        "$className": "Folder",
+
+        "VitalNodeTracker": {
+          "$path": "src/server/VitalFive/VitalNodeTracker.lua"
+        }
       }
     },
 
