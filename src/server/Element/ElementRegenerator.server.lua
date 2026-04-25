@@ -171,7 +171,4 @@ Players.PlayerRemoving:Connect(function(player)
     lastPushAt[player.UserId] = nil
 end)
 
--- TEMP: verify VitalNodeTracker loads and self-test passes
-local _VNT = require(game:GetService("ServerScriptService"):WaitForChild("VitalFive", 5):WaitForChild("VitalNodeTracker", 5))
-
 print("✅ ElementRegenerator initialized")

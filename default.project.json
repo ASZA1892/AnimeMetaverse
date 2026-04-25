@@ -67,6 +67,10 @@
 
         "VitalNodeTracker": {
           "$path": "src/server/VitalFive/VitalNodeTracker.lua"
+        },
+
+        "NodeHitDetection": {
+          "$path": "src/server/VitalFive/NodeHitDetection.lua"
         }
       }
     },
