@@ -71,6 +71,10 @@
 
         "NodeHitDetection": {
           "$path": "src/server/VitalFive/NodeHitDetection.lua"
+        },
+
+        "NodeDebuffs": {
+           "$path": "src/server/VitalFive/NodeDebuffs.lua"
         }
       }
     },
