@@ -79,4 +79,11 @@ Constants.CHAKRA_REGEN_CHARGING    = 12   -- meditating / charge move (vulnerabl
 Constants.CHAKRA_REGEN_POST_USE    = 1.5  -- pause after using a technique (seconds)
 Constants.CHAKRA_REGEN_PUSH_INTERVAL = 0.5 -- throttle rate for client push during regen
 
+-- Progression
+Constants.GPL_STARTING = 100
+Constants.GPL_MAX_LOSS_PERCENT = 0.05     -- never lose more than 5% total GPL
+Constants.GPL_MAX_SESSION_LOSS = 0.10     -- never lose more than 10% of session gains
+Constants.HONOR_MAX = 100
+Constants.HONOR_MIN = -100
+
 return Constants
