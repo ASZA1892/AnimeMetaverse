@@ -43,6 +43,7 @@ local ElementDefinitionsModule = safeWait(typesFolder, "ElementDefinitions", 2)
 local ElementStateModule = safeWait(sharedFolder, "ElementState", 10)
 local CombatStateMachineModule = safeWait(combatFolder, "CombatStateMachine", 5)
 local GuardSystemModule = safeWait(combatFolder, "GuardSystem", 5)
+local ElementInteractionsModule = safeWait(script.Parent, "ElementInteractions", 5)
 
 print("DEBUG: module presence:",
     "Shared=", tostring(sharedFolder ~= nil),
@@ -53,7 +54,8 @@ print("DEBUG: module presence:",
     "ElementDefinitions=", tostring(ElementDefinitionsModule ~= nil),
     "ElementState=", tostring(ElementStateModule ~= nil),
     "CombatStateMachine=", tostring(CombatStateMachineModule ~= nil),
-    "GuardSystem=", tostring(GuardSystemModule ~= nil)
+    "GuardSystem=", tostring(GuardSystemModule ~= nil),
+    "ElementInteractions=", tostring(ElementInteractionsModule ~= nil)
 )
 
 local function safeRequire(inst, name)
@@ -80,6 +82,7 @@ local ElementDefinitions = safeRequire(ElementDefinitionsModule, "ElementDefinit
 local ElementState = safeRequire(ElementStateModule, "ElementState")
 local CombatStateMachine = safeRequire(CombatStateMachineModule, "CombatStateMachine")
 local GuardSystem = safeRequire(GuardSystemModule, "GuardSystem")
+local ElementInteractions = safeRequire(ElementInteractionsModule, "ElementInteractions")
 
 if not TechniqueDefinitions then
     error("[ElementHandler] TechniqueDefinitions failed to load")
@@ -395,20 +398,41 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
                             end
                         end
 
-                        if hitModel ~= character then
-                            dbg(("[ElementHandler] INTERACTION CHECK — technique %s (%s) hit target. Would resolve against world effects."):format(
-                                technique.id,
-                                tostring(technique.element)
-                            ))
-                            if passiveInfo
-                                and passiveInfo.trigger == "always"
-                                and passiveInfo.effect == "BurningGround"
-                                and technique.element == "Fire"
-                            then
-                                dbg(("[ElementHandler] PASSIVE TRIGGER — Burning Ground would spawn beneath impact at %s"):format(
-                                    tostring(hitPos)
-                                ))
+                        if hitModel ~= character and ElementInteractions then
+                            -- Resolve element interactions against world effects near impact
+                            local resolution = ElementInteractions.ResolveHit({
+                                attacker      = player,
+                                attackerTier  = 3, -- TODO Phase 2 Week 3: read from mastery system
+                                technique     = technique,
+                                targetPosition = hitPos,
+                                damage        = finalDamage,
+                            })
+
+                            -- Spawn world effect from this technique's effect tag
+                            ElementInteractions.SpawnEffectFromTechnique({
+                                attacker     = player,
+                                attackerTier = 3, -- TODO Phase 2 Week 3: read from mastery system
+                                technique    = technique,
+                                tierData     = tierData,
+                                position     = hitPos,
+                            })
+
+                            -- Trigger passive if this element has an always-trigger passive
+                            if passiveInfo and passiveInfo.trigger == "always" then
+                                ElementInteractions.SpawnPassive({
+                                    player   = player,
+                                    element  = technique.element,
+                                    position = hitPos,
+                                    tier     = 3, -- TODO Phase 2 Week 3: read from mastery system
+                                })
                             end
+
+                            dbg(("ElementInteractions resolved: damageMod=%.2f interactions=%d spawned=%d destroyed=%d"):format(
+                                resolution.damageModifier,
+                                #resolution.interactionsTriggered,
+                                #resolution.effectsSpawned,
+                                #resolution.effectsDestroyed
+                            ))
                         end
 
                         local resultPayload = {
