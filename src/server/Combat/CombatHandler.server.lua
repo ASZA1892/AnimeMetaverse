@@ -4,6 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local function safeWait(parent, name, timeout)
 	if not parent then
@@ -24,16 +25,19 @@ end
 
 local sharedFolder = safeWait(ReplicatedStorage, "Shared", 5)
 local typesFolder = safeWait(sharedFolder, "Types", 5)
+local vitalFiveFolder = safeWait(ServerScriptService, "VitalFive", 10)
 
-local CombatActionsModule      = safeWait(typesFolder, "CombatActions", 2)
-local ConstantsModule          = safeWait(typesFolder, "constants", 2)
-local MoveDefinitionsModule    = safeWait(typesFolder, "MoveDefinitions", 2)
-local CombatStateMachineModule = safeWait(script.Parent, "CombatStateMachine", 5)
-local GuardSystemModule        = safeWait(script.Parent, "GuardSystem", 5)
-local DashHandlerModule        = safeWait(script.Parent, "DashHandler", 5)
-local SubstitutionHandlerModule = safeWait(script.Parent, "SubstitutionHandler", 5)
-local GrappleHandlerModule     = safeWait(script.Parent, "GrappleHandler", 5)
-local ElementStateModule       = safeWait(sharedFolder, "ElementState", 5)
+local CombatActionsModule       = safeWait(typesFolder,    "CombatActions",      2)
+local ConstantsModule           = safeWait(typesFolder,    "constants",          2)
+local MoveDefinitionsModule     = safeWait(typesFolder,    "MoveDefinitions",    2)
+local CombatStateMachineModule  = safeWait(script.Parent,  "CombatStateMachine", 5)
+local GuardSystemModule         = safeWait(script.Parent,  "GuardSystem",        5)
+local DashHandlerModule         = safeWait(script.Parent,  "DashHandler",        5)
+local SubstitutionHandlerModule = safeWait(script.Parent,  "SubstitutionHandler",5)
+local GrappleHandlerModule      = safeWait(script.Parent,  "GrappleHandler",     5)
+local ElementStateModule        = safeWait(sharedFolder,   "ElementState",       5)
+local NodeHitDetectionModule    = safeWait(vitalFiveFolder,"NodeHitDetection",   5)
+local NodeDebuffsModule         = safeWait(vitalFiveFolder,"NodeDebuffs",        5)
 
 print("DEBUG: module presence:",
 	"Shared=",              tostring(sharedFolder ~= nil),
@@ -46,7 +50,9 @@ print("DEBUG: module presence:",
 	"DashHandler=",         tostring(DashHandlerModule ~= nil),
 	"SubstitutionHandler=", tostring(SubstitutionHandlerModule ~= nil),
 	"GrappleHandler=",      tostring(GrappleHandlerModule ~= nil),
-	"ElementState=",        tostring(ElementStateModule ~= nil)
+	"ElementState=",        tostring(ElementStateModule ~= nil),
+	"NodeHitDetection=",    tostring(NodeHitDetectionModule ~= nil),
+	"NodeDebuffs=",         tostring(NodeDebuffsModule ~= nil)
 )
 
 local function safeRequire(inst, name)
@@ -73,9 +79,11 @@ local MoveDefinitions    = safeRequire(MoveDefinitionsModule,     "MoveDefinitio
 local CombatStateMachine = safeRequire(CombatStateMachineModule,  "CombatStateMachine")
 local GuardSystem        = safeRequire(GuardSystemModule,         "GuardSystem")
 local DashHandler        = safeRequire(DashHandlerModule,         "DashHandler")
-local SubstitutionHandler = safeRequire(SubstitutionHandlerModule, "SubstitutionHandler")
+local SubstitutionHandler = safeRequire(SubstitutionHandlerModule,"SubstitutionHandler")
 local GrappleHandler     = safeRequire(GrappleHandlerModule,      "GrappleHandler")
 local ElementState       = safeRequire(ElementStateModule,        "ElementState")
+local NodeHitDetection   = safeRequire(NodeHitDetectionModule,    "NodeHitDetection")
+local NodeDebuffs        = safeRequire(NodeDebuffsModule,         "NodeDebuffs")
 
 local CombatRemote = ReplicatedStorage:FindFirstChild("CombatRemote")
 if not CombatRemote then
@@ -365,6 +373,38 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 			ElementState.PauseRegen(hitPlayer)
 		end
 		dbg("Hit!", targetName, "took", finalDamage, "from", moveId)
+
+		-- Vital 5 node hit check — physical attacks
+		if NodeHitDetection and NodeDebuffs then
+			local nodeContext = {
+				attacker     = player,
+				target       = hitPlayer or hitModel,
+				hitType      = "Physical",
+				moveId       = moveId,
+				element      = nil,
+				hitCFrame    = boxCFrame,
+				hitboxSize   = hitboxSize,
+				hitPosition  = hitRoot and hitRoot.Position or rootPart.Position,
+				damage       = finalDamage,
+				attackerTier = 1, -- TODO Phase 2 Week 3: read from mastery system
+				timestamp    = os.clock(),
+				metadata     = {
+					isProjectile    = false,
+					isAoe           = move.aoe or false,
+					velocityScaling = move.velocityScaling or false,
+				},
+				vitalNodes = move.vitalNodes or nil,
+			}
+			local nodeResult = NodeHitDetection.CheckHit(nodeContext)
+			if nodeResult and nodeResult.hitNode then
+				dbg(("Vital 5 node hit: %s on %s"):format(nodeResult.nodeName, targetName))
+				local debuffResult = NodeDebuffs.Apply(nodeResult, nodeContext)
+				dbg(("NodeDebuffs.Apply: applied=%s debuff=%s"):format(
+					tostring(debuffResult.applied),
+					tostring(debuffResult.debuffId)
+				))
+			end
+		end
 	else
 		dbg("Blocked!", targetName)
 	end
@@ -413,4 +453,4 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 	end
 end)
 
-print("✅ CombatHandler server initialized (with Guard/Parry/Dash/Substitution/Grapple/ElementState)")
+print("✅ CombatHandler server initialized (with Guard/Parry/Dash/Substitution/Grapple/ElementState/VitalFive)")

@@ -33,29 +33,34 @@ local function safeWait(parent, name, timeout)
     return inst
 end
 
-local sharedFolder = safeWait(ReplicatedStorage, "Shared", 10)
-local typesFolder = safeWait(sharedFolder, "Types", 10)
-local combatFolder = safeWait(ServerScriptService, "Combat", 10)
+local sharedFolder   = safeWait(ReplicatedStorage,   "Shared",       10)
+local typesFolder    = safeWait(sharedFolder,         "Types",        10)
+local combatFolder   = safeWait(ServerScriptService,  "Combat",       10)
+local vitalFiveFolder = safeWait(ServerScriptService, "VitalFive",    10)
 
-local ConstantsModule = safeWait(typesFolder, "constants", 2)
-local TechniqueDefinitionsModule = safeWait(typesFolder, "TechniqueDefinitions", 2)
-local ElementDefinitionsModule = safeWait(typesFolder, "ElementDefinitions", 2)
-local ElementStateModule = safeWait(sharedFolder, "ElementState", 10)
-local CombatStateMachineModule = safeWait(combatFolder, "CombatStateMachine", 5)
-local GuardSystemModule = safeWait(combatFolder, "GuardSystem", 5)
-local ElementInteractionsModule = safeWait(script.Parent, "ElementInteractions", 5)
+local ConstantsModule            = safeWait(typesFolder,    "constants",          2)
+local TechniqueDefinitionsModule = safeWait(typesFolder,    "TechniqueDefinitions",2)
+local ElementDefinitionsModule   = safeWait(typesFolder,    "ElementDefinitions", 2)
+local ElementStateModule         = safeWait(sharedFolder,   "ElementState",       10)
+local CombatStateMachineModule   = safeWait(combatFolder,   "CombatStateMachine", 5)
+local GuardSystemModule          = safeWait(combatFolder,   "GuardSystem",        5)
+local ElementInteractionsModule  = safeWait(script.Parent,  "ElementInteractions",5)
+local NodeHitDetectionModule     = safeWait(vitalFiveFolder,"NodeHitDetection",   5)
+local NodeDebuffsModule          = safeWait(vitalFiveFolder,"NodeDebuffs",        5)
 
 print("DEBUG: module presence:",
-    "Shared=", tostring(sharedFolder ~= nil),
-    "Types=", tostring(typesFolder ~= nil),
-    "Combat=", tostring(combatFolder ~= nil),
-    "constants=", tostring(ConstantsModule ~= nil),
-    "TechniqueDefinitions=", tostring(TechniqueDefinitionsModule ~= nil),
-    "ElementDefinitions=", tostring(ElementDefinitionsModule ~= nil),
-    "ElementState=", tostring(ElementStateModule ~= nil),
-    "CombatStateMachine=", tostring(CombatStateMachineModule ~= nil),
-    "GuardSystem=", tostring(GuardSystemModule ~= nil),
-    "ElementInteractions=", tostring(ElementInteractionsModule ~= nil)
+    "Shared=",              tostring(sharedFolder ~= nil),
+    "Types=",               tostring(typesFolder ~= nil),
+    "Combat=",              tostring(combatFolder ~= nil),
+    "constants=",           tostring(ConstantsModule ~= nil),
+    "TechniqueDefinitions=",tostring(TechniqueDefinitionsModule ~= nil),
+    "ElementDefinitions=",  tostring(ElementDefinitionsModule ~= nil),
+    "ElementState=",        tostring(ElementStateModule ~= nil),
+    "CombatStateMachine=",  tostring(CombatStateMachineModule ~= nil),
+    "GuardSystem=",         tostring(GuardSystemModule ~= nil),
+    "ElementInteractions=", tostring(ElementInteractionsModule ~= nil),
+    "NodeHitDetection=",    tostring(NodeHitDetectionModule ~= nil),
+    "NodeDebuffs=",         tostring(NodeDebuffsModule ~= nil)
 )
 
 local function safeRequire(inst, name)
@@ -76,32 +81,22 @@ local function safeRequire(inst, name)
     return result
 end
 
-local Constants = safeRequire(ConstantsModule, "constants")
-local TechniqueDefinitions = safeRequire(TechniqueDefinitionsModule, "TechniqueDefinitions")
-local ElementDefinitions = safeRequire(ElementDefinitionsModule, "ElementDefinitions")
-local ElementState = safeRequire(ElementStateModule, "ElementState")
-local CombatStateMachine = safeRequire(CombatStateMachineModule, "CombatStateMachine")
-local GuardSystem = safeRequire(GuardSystemModule, "GuardSystem")
-local ElementInteractions = safeRequire(ElementInteractionsModule, "ElementInteractions")
+local Constants            = safeRequire(ConstantsModule,            "constants")
+local TechniqueDefinitions = safeRequire(TechniqueDefinitionsModule,  "TechniqueDefinitions")
+local ElementDefinitions   = safeRequire(ElementDefinitionsModule,    "ElementDefinitions")
+local ElementState         = safeRequire(ElementStateModule,          "ElementState")
+local CombatStateMachine   = safeRequire(CombatStateMachineModule,    "CombatStateMachine")
+local GuardSystem          = safeRequire(GuardSystemModule,           "GuardSystem")
+local ElementInteractions  = safeRequire(ElementInteractionsModule,   "ElementInteractions")
+local NodeHitDetection     = safeRequire(NodeHitDetectionModule,      "NodeHitDetection")
+local NodeDebuffs          = safeRequire(NodeDebuffsModule,           "NodeDebuffs")
 
-if not TechniqueDefinitions then
-    error("[ElementHandler] TechniqueDefinitions failed to load")
-end
-if not ElementState then
-    error("[ElementHandler] ElementState failed to load")
-end
-if not ElementDefinitions then
-    error("[ElementHandler] ElementDefinitions failed to load")
-end
-if not CombatStateMachine then
-    error("[ElementHandler] CombatStateMachine failed to load")
-end
-if not GuardSystem then
-    error("[ElementHandler] GuardSystem failed to load")
-end
-if not Constants then
-    error("[ElementHandler] Constants failed to load")
-end
+if not TechniqueDefinitions then error("[ElementHandler] TechniqueDefinitions failed to load") end
+if not ElementState         then error("[ElementHandler] ElementState failed to load")         end
+if not ElementDefinitions   then error("[ElementHandler] ElementDefinitions failed to load")   end
+if not CombatStateMachine   then error("[ElementHandler] CombatStateMachine failed to load")   end
+if not GuardSystem          then error("[ElementHandler] GuardSystem failed to load")          end
+if not Constants            then error("[ElementHandler] Constants failed to load")            end
 
 local ElementRemote = ReplicatedStorage:FindFirstChild("ElementRemote")
 if not ElementRemote then
@@ -118,12 +113,12 @@ local function dbg(...)
 end
 
 local techniqueCooldowns = setmetatable({}, { __mode = "k" })
-local lastTechniqueAt = setmetatable({}, { __mode = "k" })
+local lastTechniqueAt    = setmetatable({}, { __mode = "k" })
 
 local TECHNIQUE_MIN_INTERVAL = 0.15
 
-local ACTION_TECHNIQUE_USE = "TechniqueUse"
-local ACTION_TECHNIQUE_RESULT = "TechniqueResult"
+local ACTION_TECHNIQUE_USE     = "TechniqueUse"
+local ACTION_TECHNIQUE_RESULT  = "TechniqueResult"
 local ACTION_TECHNIQUE_BLOCKED = "TechniqueBlocked"
 
 local function findCharacterModelFromPart(part)
@@ -144,7 +139,7 @@ end
 local function fireBlocked(player, techniqueId, reason)
     ElementRemote:FireClient(player, ACTION_TECHNIQUE_BLOCKED, {
         techniqueId = techniqueId,
-        reason = reason,
+        reason      = reason,
     })
 end
 
@@ -159,58 +154,45 @@ local function anyKnownElementSealed(player)
 end
 
 local function finalSetupSatisfied(player, technique)
-    if not technique.isFinal then
-        return true
-    end
+    if not technique.isFinal then return true end
     local setup = technique.setup
-    if type(setup) ~= "table" then
-        return false
-    end
+    if type(setup) ~= "table" then return false end
 
     local anyChecked = false
-    local anyPass = false
+    local anyPass    = false
 
     local function consider(flagName, passes)
         if setup[flagName] == true then
             anyChecked = true
-            if passes then
-                anyPass = true
-            end
+            if passes then anyPass = true end
         end
     end
 
     local meta = CombatStateMachine.GetMeta(player)
-    consider("requireGuardBroken", meta.guardBroken == true)
-    consider("requireNodeSealed", anyKnownElementSealed(player))
-    -- Week 4: momentum >= Constants.MOMENTUM_MAX
-    consider("requireMomentumFull", false)
-    consider("requireCharge", CombatStateMachine.GetState(player) == "Channeling")
+    consider("requireGuardBroken",       meta.guardBroken == true)
+    consider("requireNodeSealed",        anyKnownElementSealed(player))
+    consider("requireMomentumFull",      false) -- Week 4
+    consider("requireCharge",            CombatStateMachine.GetState(player) == "Channeling")
     consider("requireFavourableTerrain", true)
 
-    if not anyChecked then
-        return true
-    end
+    if not anyChecked then return true end
     return anyPass
 end
 
 local function getHitPosition(hitModel, fallbackPos)
     local root = hitModel.PrimaryPart or hitModel:FindFirstChild("HumanoidRootPart")
-    if root then
-        return root.Position
-    end
+    if root then return root.Position end
     return fallbackPos
 end
 
 ElementRemote.OnServerEvent:Connect(function(player, action, data)
-    if action ~= ACTION_TECHNIQUE_USE then
-        return
-    end
+    if action ~= ACTION_TECHNIQUE_USE then return end
 
     if not (player and typeof(player) == "Instance" and player:IsA("Player") and player.UserId and player.UserId > 0) then
         return
     end
 
-    local now = tick()
+    local now  = tick()
     local last = lastTechniqueAt[player] or 0
     if now - last < TECHNIQUE_MIN_INTERVAL then
         fireBlocked(player, type(data) == "table" and data.techniqueId or nil, "rate_limited")
@@ -224,7 +206,7 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
         return
     end
 
-    local tid = type(data) == "table" and data.techniqueId or nil
+    local tid       = type(data) == "table" and data.techniqueId or nil
     local technique = type(tid) == "string" and TechniqueDefinitions.GetTechnique(tid) or nil
 
     if type(data) ~= "table" or type(tid) ~= "string" or not technique then
@@ -295,40 +277,39 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
     techniqueCooldowns[player][technique.id] = tick() + technique.cooldown
 
     local rootPart = character.PrimaryPart
-    local range = tierData.range or 0
+    local range    = tierData.range or 0
 
     if technique.projectile == true then
         dbg("[ElementHandler] Projectile technique — TODO Phase 2: spawn projectile via ElementInteractions.lua")
-        local pos = rootPart.Position
-        local payload = {
+        ElementRemote:FireClient(player, ACTION_TECHNIQUE_RESULT, {
             techniqueId = technique.id,
-            attacker = player,
-            target = nil,
-            damage = 0,
-            position = pos,
-            blocked = false,
-            parried = false,
-            timestamp = tick(),
-        }
-        ElementRemote:FireClient(player, ACTION_TECHNIQUE_RESULT, payload)
+            attacker    = player,
+            target      = nil,
+            damage      = 0,
+            position    = rootPart.Position,
+            blocked     = false,
+            parried     = false,
+            timestamp   = tick(),
+        })
         return
     end
 
-    local hits = {}
+    local hits    = {}
+    local boxCFrame = nil
+    local hitboxSize = tierData.hitboxSize or Vector3.new(4, 4, 4)
+
     if range == 0 then
         table.insert(hits, character)
     else
         local forward = rootPart.CFrame.LookVector
-        local center = rootPart.Position + forward * (range / 2)
-        local boxCFrame = CFrame.new(center)
+        local center  = rootPart.Position + forward * (range / 2)
+        boxCFrame     = CFrame.new(center)
 
         local overlapParams = OverlapParams.new()
         overlapParams.FilterType = Enum.RaycastFilterType.Exclude
         overlapParams.FilterDescendantsInstances = { character }
 
-        local hitboxSize = tierData.hitboxSize or Vector3.new(4, 4, 4)
         local partsInBox = Workspace:GetPartBoundsInBox(boxCFrame, hitboxSize, overlapParams)
-
         dbg("partsInBox count:", #partsInBox)
 
         local seen = {}
@@ -339,9 +320,7 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
                 if hum and hum.Health > 0 then
                     seen[model] = true
                     table.insert(hits, model)
-                    if technique.aoe ~= true then
-                        break
-                    end
+                    if technique.aoe ~= true then break end
                 end
             end
         end
@@ -350,16 +329,14 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
     local passiveInfo = TechniqueDefinitions.GetPassive(technique.element)
 
     for _, hitModel in ipairs(hits) do
-        local hitPlayer = Players:GetPlayerFromCharacter(hitModel)
+        local hitPlayer   = Players:GetPlayerFromCharacter(hitModel)
         local hitHumanoid = hitModel:FindFirstChildOfClass("Humanoid")
         if hitHumanoid and hitHumanoid.Health > 0 then
             local hitRoot = hitModel.PrimaryPart or hitModel:FindFirstChild("HumanoidRootPart")
             local inRange = true
             if hitRoot then
                 local dist = (hitRoot.Position - rootPart.Position).Magnitude
-                if dist > (range + 2) then
-                    inRange = false
-                end
+                if dist > (range + 2) then inRange = false end
             end
 
             if inRange then
@@ -368,23 +345,21 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
                 end)
 
                 if okProc then
-                    if type(finalDamage) ~= "number" then
-                        finalDamage = 0
-                    end
+                    if type(finalDamage) ~= "number" then finalDamage = 0 end
 
-                    local hitPos = getHitPosition(hitModel, rootPart.Position)
+                    local hitPos     = getHitPosition(hitModel, rootPart.Position)
                     local blockedFlag = (hitPlayer and CombatStateMachine.GetState(hitPlayer) == "Blocking") or false
 
                     if wasParried then
                         local parryPayload = {
                             techniqueId = technique.id,
-                            attacker = player,
-                            target = hitPlayer,
-                            damage = 0,
-                            position = hitPos,
-                            blocked = blockedFlag,
-                            parried = true,
-                            timestamp = tick(),
+                            attacker    = player,
+                            target      = hitPlayer,
+                            damage      = 0,
+                            position    = hitPos,
+                            blocked     = blockedFlag,
+                            parried     = true,
+                            timestamp   = tick(),
                         }
                         ElementRemote:FireClient(player, ACTION_TECHNIQUE_RESULT, parryPayload)
                         if hitPlayer and hitPlayer ~= player then
@@ -398,32 +373,61 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
                             end
                         end
 
+                        -- Vital 5 node hit check — element techniques
+                        if NodeHitDetection and NodeDebuffs and finalDamage > 0 then
+                            local nodeContext = {
+                                attacker     = player,
+                                target       = hitPlayer or hitModel,
+                                hitType      = "Element",
+                                moveId       = technique.id,
+                                element      = technique.element,
+                                hitCFrame    = boxCFrame or CFrame.new(hitPos),
+                                hitboxSize   = hitboxSize,
+                                hitPosition  = hitPos,
+                                damage       = finalDamage,
+                                attackerTier = 3, -- TODO Phase 2 Week 3: read from mastery system
+                                timestamp    = os.clock(),
+                                metadata     = {
+                                    isProjectile    = technique.projectile or false,
+                                    isAoe           = technique.aoe or false,
+                                    velocityScaling = technique.velocityScaling or false,
+                                },
+                                vitalNodes = technique.vitalNodes or nil,
+                            }
+                            local nodeResult = NodeHitDetection.CheckHit(nodeContext)
+                            if nodeResult and nodeResult.hitNode then
+                                dbg(("Vital 5 node hit: %s via %s"):format(nodeResult.nodeName, technique.id))
+                                local debuffResult = NodeDebuffs.Apply(nodeResult, nodeContext)
+                                dbg(("NodeDebuffs.Apply: applied=%s debuff=%s"):format(
+                                    tostring(debuffResult.applied),
+                                    tostring(debuffResult.debuffId)
+                                ))
+                            end
+                        end
+
                         if hitModel ~= character and ElementInteractions then
-                            -- Resolve element interactions against world effects near impact
                             local resolution = ElementInteractions.ResolveHit({
-                                attacker      = player,
-                                attackerTier  = 3, -- TODO Phase 2 Week 3: read from mastery system
-                                technique     = technique,
+                                attacker       = player,
+                                attackerTier   = 3,
+                                technique      = technique,
                                 targetPosition = hitPos,
-                                damage        = finalDamage,
+                                damage         = finalDamage,
                             })
 
-                            -- Spawn world effect from this technique's effect tag
                             ElementInteractions.SpawnEffectFromTechnique({
                                 attacker     = player,
-                                attackerTier = 3, -- TODO Phase 2 Week 3: read from mastery system
+                                attackerTier = 3,
                                 technique    = technique,
                                 tierData     = tierData,
                                 position     = hitPos,
                             })
 
-                            -- Trigger passive if this element has an always-trigger passive
                             if passiveInfo and passiveInfo.trigger == "always" then
                                 ElementInteractions.SpawnPassive({
                                     player   = player,
                                     element  = technique.element,
                                     position = hitPos,
-                                    tier     = 3, -- TODO Phase 2 Week 3: read from mastery system
+                                    tier     = 3,
                                 })
                             end
 
@@ -437,13 +441,13 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
 
                         local resultPayload = {
                             techniqueId = technique.id,
-                            attacker = player,
-                            target = hitPlayer,
-                            damage = finalDamage,
-                            position = hitPos,
-                            blocked = blockedFlag,
-                            parried = false,
-                            timestamp = tick(),
+                            attacker    = player,
+                            target      = hitPlayer,
+                            damage      = finalDamage,
+                            position    = hitPos,
+                            blocked     = blockedFlag,
+                            parried     = false,
+                            timestamp   = tick(),
                         }
                         ElementRemote:FireClient(player, ACTION_TECHNIQUE_RESULT, resultPayload)
                         if hitPlayer and hitPlayer ~= player then
