@@ -40,6 +40,26 @@
         "GrappleHandler": {
           "$path": "src/server/Combat/GrappleHandler.lua"
         }
+      },
+
+      "Element": {
+        "$className": "Folder",
+
+        "ElementRegenerator": {
+          "$path": "src/server/Element/ElementRegenerator.server.lua"
+        },
+
+        "ElementHandler": {
+          "$path": "src/server/Element/ElementHandler.server.lua"
+        },
+
+        "WorldEffectRegistry": {
+          "$path": "src/server/Element/WorldEffectRegistry.lua"
+        },
+
+        "ElementInteractions": {
+          "$path": "src/server/Element/ElementInteractions.lua"
+        }
       }
     },
 

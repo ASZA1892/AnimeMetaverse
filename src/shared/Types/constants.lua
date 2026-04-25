@@ -63,4 +63,20 @@ Constants.GRAPPLE_RANGE = 4.5
 Constants.GRAPPLE_DISABLE_DURATION = 1.5
 Constants.GRAPPLE_THROW_DISTANCE = 15
 
+
+-- Chakra
+Constants.MAX_CHAKRA = 100
+Constants.CHAKRA_REGEN_RATE = 8         -- per second (deliberately slower than stamina)
+Constants.CHAKRA_REGEN_DELAY = 2        -- seconds after taking a hit before regen resumes
+Constants.CHAKRA_CHARGE_RATE = 25       -- per second when channeling (future charge move)
+
+-- Chakra regen rates by player state (per second)
+Constants.CHAKRA_REGEN_IDLE        = 8    -- standing calm / out of combat
+Constants.CHAKRA_REGEN_MOVING      = 5    -- walking / neutral movement
+Constants.CHAKRA_REGEN_SPRINT      = 2    -- sprinting or dashing
+Constants.CHAKRA_REGEN_BLOCKING    = 2    -- holding block
+Constants.CHAKRA_REGEN_CHARGING    = 12   -- meditating / charge move (vulnerable)
+Constants.CHAKRA_REGEN_POST_USE    = 1.5  -- pause after using a technique (seconds)
+Constants.CHAKRA_REGEN_PUSH_INTERVAL = 0.5 -- throttle rate for client push during regen
+
 return Constants

@@ -25,26 +25,28 @@ end
 local sharedFolder = safeWait(ReplicatedStorage, "Shared", 5)
 local typesFolder = safeWait(sharedFolder, "Types", 5)
 
-local CombatActionsModule = safeWait(typesFolder, "CombatActions", 2)
-local ConstantsModule = safeWait(typesFolder, "constants", 2)
-local MoveDefinitionsModule = safeWait(typesFolder, "MoveDefinitions", 2)
+local CombatActionsModule      = safeWait(typesFolder, "CombatActions", 2)
+local ConstantsModule          = safeWait(typesFolder, "constants", 2)
+local MoveDefinitionsModule    = safeWait(typesFolder, "MoveDefinitions", 2)
 local CombatStateMachineModule = safeWait(script.Parent, "CombatStateMachine", 5)
-local GuardSystemModule = safeWait(script.Parent, "GuardSystem", 5)
-local DashHandlerModule = safeWait(script.Parent, "DashHandler", 5)
+local GuardSystemModule        = safeWait(script.Parent, "GuardSystem", 5)
+local DashHandlerModule        = safeWait(script.Parent, "DashHandler", 5)
 local SubstitutionHandlerModule = safeWait(script.Parent, "SubstitutionHandler", 5)
-local GrappleHandlerModule = safeWait(script.Parent, "GrappleHandler", 5)
+local GrappleHandlerModule     = safeWait(script.Parent, "GrappleHandler", 5)
+local ElementStateModule       = safeWait(sharedFolder, "ElementState", 5)
 
 print("DEBUG: module presence:",
-	"Shared=", tostring(sharedFolder ~= nil),
-	"Types=", tostring(typesFolder ~= nil),
-	"CombatActions=", tostring(CombatActionsModule ~= nil),
-	"constants=", tostring(ConstantsModule ~= nil),
-	"MoveDefinitions=", tostring(MoveDefinitionsModule ~= nil),
-	"CombatStateMachine=", tostring(CombatStateMachineModule ~= nil),
-	"GuardSystem=", tostring(GuardSystemModule ~= nil),
-	"DashHandler=", tostring(DashHandlerModule ~= nil),
+	"Shared=",              tostring(sharedFolder ~= nil),
+	"Types=",               tostring(typesFolder ~= nil),
+	"CombatActions=",       tostring(CombatActionsModule ~= nil),
+	"constants=",           tostring(ConstantsModule ~= nil),
+	"MoveDefinitions=",     tostring(MoveDefinitionsModule ~= nil),
+	"CombatStateMachine=",  tostring(CombatStateMachineModule ~= nil),
+	"GuardSystem=",         tostring(GuardSystemModule ~= nil),
+	"DashHandler=",         tostring(DashHandlerModule ~= nil),
 	"SubstitutionHandler=", tostring(SubstitutionHandlerModule ~= nil),
-	"GrappleHandler=", tostring(GrappleHandlerModule ~= nil)
+	"GrappleHandler=",      tostring(GrappleHandlerModule ~= nil),
+	"ElementState=",        tostring(ElementStateModule ~= nil)
 )
 
 local function safeRequire(inst, name)
@@ -65,14 +67,15 @@ local function safeRequire(inst, name)
 	return result
 end
 
-local CombatActions = safeRequire(CombatActionsModule, "CombatActions")
-local Constants = safeRequire(ConstantsModule, "constants")
-local MoveDefinitions = safeRequire(MoveDefinitionsModule, "MoveDefinitions")
-local CombatStateMachine = safeRequire(CombatStateMachineModule, "CombatStateMachine")
-local GuardSystem = safeRequire(GuardSystemModule, "GuardSystem")
-local DashHandler = safeRequire(DashHandlerModule, "DashHandler")
+local CombatActions      = safeRequire(CombatActionsModule,       "CombatActions")
+local Constants          = safeRequire(ConstantsModule,           "constants")
+local MoveDefinitions    = safeRequire(MoveDefinitionsModule,     "MoveDefinitions")
+local CombatStateMachine = safeRequire(CombatStateMachineModule,  "CombatStateMachine")
+local GuardSystem        = safeRequire(GuardSystemModule,         "GuardSystem")
+local DashHandler        = safeRequire(DashHandlerModule,         "DashHandler")
 local SubstitutionHandler = safeRequire(SubstitutionHandlerModule, "SubstitutionHandler")
-local GrappleHandler = safeRequire(GrappleHandlerModule, "GrappleHandler")
+local GrappleHandler     = safeRequire(GrappleHandlerModule,      "GrappleHandler")
+local ElementState       = safeRequire(ElementStateModule,        "ElementState")
 
 local CombatRemote = ReplicatedStorage:FindFirstChild("CombatRemote")
 if not CombatRemote then
@@ -358,6 +361,9 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 
 	if finalDamage > 0 and hitHumanoid and hitHumanoid.Parent then
 		hitHumanoid:TakeDamage(finalDamage)
+		if hitPlayer and ElementState then
+			ElementState.PauseRegen(hitPlayer)
+		end
 		dbg("Hit!", targetName, "took", finalDamage, "from", moveId)
 	else
 		dbg("Blocked!", targetName)
@@ -370,9 +376,7 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 			if okUnit and knockbackDir then
 				local multiplier = (hitPlayer and CombatStateMachine.GetState(hitPlayer) == "Blocking") and 0.5 or 1.0
 				local knockbackVelocity = knockbackDir * (move.knockback * 10) * multiplier
-				-- Apply server side
 				hitRoot.AssemblyLinearVelocity = knockbackVelocity
-				-- Also fire to target client for local application
 				if hitPlayer then
 					CombatRemote:FireClient(hitPlayer, CombatActions.ServerToClient.KNOCKBACK, {
 						velocity = knockbackVelocity,
@@ -392,15 +396,15 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 
 	if finalDamage > 0 or guardBroken then
 		local hitData = {
-			attacker = player,
-			target = hitPlayer,
-			position = hitModel.PrimaryPart and hitModel.PrimaryPart.Position or Vector3.zero,
-			damage = finalDamage,
-			moveId = moveId,
-			hitStop = Constants and Constants.HIT_STOP_DURATION or 0,
+			attacker        = player,
+			target          = hitPlayer,
+			position        = hitModel.PrimaryPart and hitModel.PrimaryPart.Position or Vector3.zero,
+			damage          = finalDamage,
+			moveId          = moveId,
+			hitStop         = Constants and Constants.HIT_STOP_DURATION or 0,
 			serverTimestamp = tick(),
-			blocked = (hitPlayer and CombatStateMachine.GetState(hitPlayer) == "Blocking") or false,
-			guardBroken = guardBroken,
+			blocked         = (hitPlayer and CombatStateMachine.GetState(hitPlayer) == "Blocking") or false,
+			guardBroken     = guardBroken,
 		}
 		CombatRemote:FireClient(player, CombatActions.ServerToClient.HIT_CONFIRMED, hitData)
 		if hitPlayer then
@@ -409,4 +413,4 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 	end
 end)
 
-print("✅ CombatHandler server initialized (with Guard/Parry/Dash/Substitution/Grapple)")
+print("✅ CombatHandler server initialized (with Guard/Parry/Dash/Substitution/Grapple/ElementState)")
