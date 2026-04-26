@@ -83,6 +83,10 @@
 
         "GPLHandler": {
           "$path": "src/server/Progression/GPLHandler.server.lua"
+        },
+
+        "MasteryTracker": {
+          "$path": "src/server/Progression/MasteryTracker.lua"
         }
       }  
     },
