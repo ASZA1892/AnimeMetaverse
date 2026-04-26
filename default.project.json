@@ -91,6 +91,10 @@
 
         "HonorSystem": {
           "$path": "src/server/Progression/HonorSystem.lua"
+        },
+
+        "AuraPressure": {
+          "$path": "src/server/Progression/AuraPressure.server.lua"
         }
       }  
     },
