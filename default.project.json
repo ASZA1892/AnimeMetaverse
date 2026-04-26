@@ -87,6 +87,10 @@
 
         "MasteryTracker": {
           "$path": "src/server/Progression/MasteryTracker.lua"
+        },
+
+        "HonorSystem": {
+          "$path": "src/server/Progression/HonorSystem.lua"
         }
       }  
     },

@@ -171,7 +171,4 @@ Players.PlayerRemoving:Connect(function(player)
     lastPushAt[player.UserId] = nil
 end)
 
--- TEMP: verify MasteryTracker loads cleanly
-local _MT = require(game:GetService("ServerScriptService"):WaitForChild("Progression",5):WaitForChild("MasteryTracker",5))
-
 print("✅ ElementRegenerator initialized")
