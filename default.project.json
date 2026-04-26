@@ -76,7 +76,15 @@
         "NodeDebuffs": {
            "$path": "src/server/VitalFive/NodeDebuffs.lua"
         }
-      }
+      },
+
+      "Progression": {
+        "$className": "Folder",
+
+        "GPLHandler": {
+          "$path": "src/server/Progression/GPLHandler.server.lua"
+        }
+      }  
     },
 
     "StarterPlayer": {
