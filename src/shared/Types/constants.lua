@@ -26,6 +26,7 @@ Constants.DASH_STAMINA_QUICK = 10
 Constants.DASH_STAMINA_MEDIUM = 18
 Constants.DASH_STAMINA_FULL = 28
 Constants.SUBSTITUTION_MIN_STAMINA = 20
+Constants.STAMINA_REGEN_PAUSE = 2.0  -- seconds of regen pause after taking damage
 
 -- Guard
 Constants.MAX_GUARD = 100

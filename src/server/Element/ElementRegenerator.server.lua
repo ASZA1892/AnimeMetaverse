@@ -171,4 +171,7 @@ Players.PlayerRemoving:Connect(function(player)
     lastPushAt[player.UserId] = nil
 end)
 
+-- TEMP: verify StaminaState loads cleanly
+local _SS = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared",5):WaitForChild("StaminaState",5))
+
 print("✅ ElementRegenerator initialized")

@@ -1,5 +1,5 @@
 -- src/server/Combat/CombatHandler.server.lua
--- Robust data-driven server-side combat handler with Guard/Parry/Dash/Substitution/Grapple
+-- Robust data-driven server-side combat handler with Guard/Parry/Dash/Substitution/Grapple/Progression
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -25,19 +25,24 @@ end
 
 local sharedFolder = safeWait(ReplicatedStorage, "Shared", 5)
 local typesFolder = safeWait(sharedFolder, "Types", 5)
-local vitalFiveFolder = safeWait(ServerScriptService, "VitalFive", 10)
+local vitalFiveFolder   = safeWait(ServerScriptService, "VitalFive",    10)
+local progressionFolder = safeWait(ServerScriptService, "Progression",  10)
 
-local CombatActionsModule       = safeWait(typesFolder,    "CombatActions",      2)
-local ConstantsModule           = safeWait(typesFolder,    "constants",          2)
-local MoveDefinitionsModule     = safeWait(typesFolder,    "MoveDefinitions",    2)
-local CombatStateMachineModule  = safeWait(script.Parent,  "CombatStateMachine", 5)
-local GuardSystemModule         = safeWait(script.Parent,  "GuardSystem",        5)
-local DashHandlerModule         = safeWait(script.Parent,  "DashHandler",        5)
-local SubstitutionHandlerModule = safeWait(script.Parent,  "SubstitutionHandler",5)
-local GrappleHandlerModule      = safeWait(script.Parent,  "GrappleHandler",     5)
-local ElementStateModule        = safeWait(sharedFolder,   "ElementState",       5)
-local NodeHitDetectionModule    = safeWait(vitalFiveFolder,"NodeHitDetection",   5)
-local NodeDebuffsModule         = safeWait(vitalFiveFolder,"NodeDebuffs",        5)
+local CombatActionsModule       = safeWait(typesFolder,       "CombatActions",       2)
+local ConstantsModule           = safeWait(typesFolder,       "constants",           2)
+local MoveDefinitionsModule     = safeWait(typesFolder,       "MoveDefinitions",     2)
+local CombatStateMachineModule  = safeWait(script.Parent,     "CombatStateMachine",  5)
+local GuardSystemModule         = safeWait(script.Parent,     "GuardSystem",         5)
+local DashHandlerModule         = safeWait(script.Parent,     "DashHandler",         5)
+local SubstitutionHandlerModule = safeWait(script.Parent,     "SubstitutionHandler", 5)
+local GrappleHandlerModule      = safeWait(script.Parent,     "GrappleHandler",      5)
+local ElementStateModule        = safeWait(sharedFolder,      "ElementState",        5)
+local StaminaStateModule        = safeWait(sharedFolder,      "StaminaState",        5)
+local NodeHitDetectionModule    = safeWait(vitalFiveFolder,   "NodeHitDetection",    5)
+local NodeDebuffsModule         = safeWait(vitalFiveFolder,   "NodeDebuffs",         5)
+local GPLHandlerModule          = safeWait(progressionFolder, "GPLHandler",          5)
+local MasteryTrackerModule      = safeWait(progressionFolder, "MasteryTracker",      5)
+local AuraPressureModule        = safeWait(progressionFolder, "AuraPressure",        5)
 
 print("DEBUG: module presence:",
 	"Shared=",              tostring(sharedFolder ~= nil),
@@ -51,8 +56,12 @@ print("DEBUG: module presence:",
 	"SubstitutionHandler=", tostring(SubstitutionHandlerModule ~= nil),
 	"GrappleHandler=",      tostring(GrappleHandlerModule ~= nil),
 	"ElementState=",        tostring(ElementStateModule ~= nil),
+	"StaminaState=",        tostring(StaminaStateModule ~= nil),
 	"NodeHitDetection=",    tostring(NodeHitDetectionModule ~= nil),
-	"NodeDebuffs=",         tostring(NodeDebuffsModule ~= nil)
+	"NodeDebuffs=",         tostring(NodeDebuffsModule ~= nil),
+	"GPLHandler=",          tostring(GPLHandlerModule ~= nil),
+	"MasteryTracker=",      tostring(MasteryTrackerModule ~= nil),
+	"AuraPressure=",        tostring(AuraPressureModule ~= nil)
 )
 
 local function safeRequire(inst, name)
@@ -73,17 +82,21 @@ local function safeRequire(inst, name)
 	return result
 end
 
-local CombatActions      = safeRequire(CombatActionsModule,       "CombatActions")
-local Constants          = safeRequire(ConstantsModule,           "constants")
-local MoveDefinitions    = safeRequire(MoveDefinitionsModule,     "MoveDefinitions")
-local CombatStateMachine = safeRequire(CombatStateMachineModule,  "CombatStateMachine")
-local GuardSystem        = safeRequire(GuardSystemModule,         "GuardSystem")
-local DashHandler        = safeRequire(DashHandlerModule,         "DashHandler")
-local SubstitutionHandler = safeRequire(SubstitutionHandlerModule,"SubstitutionHandler")
-local GrappleHandler     = safeRequire(GrappleHandlerModule,      "GrappleHandler")
-local ElementState       = safeRequire(ElementStateModule,        "ElementState")
-local NodeHitDetection   = safeRequire(NodeHitDetectionModule,    "NodeHitDetection")
-local NodeDebuffs        = safeRequire(NodeDebuffsModule,         "NodeDebuffs")
+local CombatActions       = safeRequire(CombatActionsModule,       "CombatActions")
+local Constants           = safeRequire(ConstantsModule,           "constants")
+local MoveDefinitions     = safeRequire(MoveDefinitionsModule,     "MoveDefinitions")
+local CombatStateMachine  = safeRequire(CombatStateMachineModule,  "CombatStateMachine")
+local GuardSystem         = safeRequire(GuardSystemModule,         "GuardSystem")
+local DashHandler         = safeRequire(DashHandlerModule,         "DashHandler")
+local SubstitutionHandler = safeRequire(SubstitutionHandlerModule, "SubstitutionHandler")
+local GrappleHandler      = safeRequire(GrappleHandlerModule,      "GrappleHandler")
+local ElementState        = safeRequire(ElementStateModule,        "ElementState")
+local StaminaState        = safeRequire(StaminaStateModule,        "StaminaState")
+local NodeHitDetection    = safeRequire(NodeHitDetectionModule,    "NodeHitDetection")
+local NodeDebuffs         = safeRequire(NodeDebuffsModule,         "NodeDebuffs")
+local GPLHandler          = safeRequire(GPLHandlerModule,          "GPLHandler")
+local MasteryTracker      = safeRequire(MasteryTrackerModule,      "MasteryTracker")
+local AuraPressure        = safeRequire(AuraPressureModule,        "AuraPressure")
 
 local CombatRemote = ReplicatedStorage:FindFirstChild("CombatRemote")
 if not CombatRemote then
@@ -101,6 +114,18 @@ end
 
 local lastAttackAt = setmetatable({}, { __mode = "k" })
 local ATTACK_MIN_INTERVAL = 0.1
+
+-- Stamina costs for physical attacks (from GameDesignDecisions.md)
+local STAMINA_COST_LIGHT = 5    -- Jab, Cross, Hook
+local STAMINA_COST_HEAVY = 12   -- Uppercut, GuardBreak, etc
+
+local function getMoveCost(move)
+	if type(move.staminaCost) == "number" then
+		return move.staminaCost
+	end
+	local dmg = move.damage or 0
+	return dmg >= 18 and STAMINA_COST_HEAVY or STAMINA_COST_LIGHT
+end
 
 local function canProcessAttack(player)
 	local now = tick()
@@ -280,12 +305,25 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 		return
 	end
 
+	-- Stamina check BEFORE committing to the attack state
+	local moveCost = getMoveCost(move)
+	if StaminaState and not StaminaState.HasEnough(player, moveCost) then
+		dbg("Rejected: insufficient stamina (need", moveCost, "have", StaminaState.GetStamina(player), ")")
+		return
+	end
+
 	local ok, reason = CombatStateMachine.TrySetState(player, "Attacking", {
 		expiresAt = tick() + (move.cooldown or 0)
 	})
 	if not ok then
 		dbg("Rejected: State transition failed:", tostring(reason))
 		return
+	end
+
+	-- Deduct stamina — committed to the swing regardless of whether it lands
+	if StaminaState then
+		StaminaState.Deduct(player, moveCost)
+		dbg("Stamina deducted:", moveCost, "→", StaminaState.GetStamina(player))
 	end
 
 	local character = player.Character
@@ -374,7 +412,23 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 		end
 		dbg("Hit!", targetName, "took", finalDamage, "from", moveId)
 
+		-- Pause stamina regen on the target (matches chakra pause behaviour)
+		if hitPlayer and StaminaState then
+			StaminaState.PauseRegen(hitPlayer)
+		end
+
+		-- GPL kill attribution
+		if hitPlayer and GPLHandler then
+			pcall(function() GPLHandler.RegisterDamage(player, hitPlayer) end)
+		end
+
+		-- Aura Pressure combat registration
+		if hitPlayer and AuraPressure then
+			pcall(function() AuraPressure.RegisterCombat(player, hitPlayer) end)
+		end
+
 		-- Vital 5 node hit check — physical attacks
+		local nodeWasHit = false
 		if NodeHitDetection and NodeDebuffs then
 			local nodeContext = {
 				attacker     = player,
@@ -397,6 +451,7 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 			}
 			local nodeResult = NodeHitDetection.CheckHit(nodeContext)
 			if nodeResult and nodeResult.hitNode then
+				nodeWasHit = true
 				dbg(("Vital 5 node hit: %s on %s"):format(nodeResult.nodeName, targetName))
 				local debuffResult = NodeDebuffs.Apply(nodeResult, nodeContext)
 				dbg(("NodeDebuffs.Apply: applied=%s debuff=%s"):format(
@@ -404,6 +459,20 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 					tostring(debuffResult.debuffId)
 				))
 			end
+		end
+
+		-- Mastery tracking (after Vital 5 so node hit bonus is known)
+		if MasteryTracker then
+			pcall(function()
+				MasteryTracker.RegisterHit({
+					player       = player,
+					techniqueId  = moveId,
+					element      = nil,
+					hitVitalNode = nodeWasHit,
+					attackerGPL  = 100,  -- TODO: ProgressionState.GetGPL(player)
+					targetGPL    = hitPlayer and 100 or 0,
+				})
+			end)
 		end
 	else
 		dbg("Blocked!", targetName)
@@ -453,4 +522,4 @@ CombatRemote.OnServerEvent:Connect(function(player, action, data)
 	end
 end)
 
-print("✅ CombatHandler server initialized (with Guard/Parry/Dash/Substitution/Grapple/ElementState/VitalFive)")
+print("✅ CombatHandler server initialized (with Guard/Parry/Dash/Substitution/Grapple/ElementState/VitalFive/Progression)")

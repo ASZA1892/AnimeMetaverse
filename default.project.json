@@ -74,7 +74,7 @@
         },
 
         "NodeDebuffs": {
-           "$path": "src/server/VitalFive/NodeDebuffs.lua"
+          "$path": "src/server/VitalFive/NodeDebuffs.lua"
         }
       },
 
@@ -82,7 +82,7 @@
         "$className": "Folder",
 
         "GPLHandler": {
-          "$path": "src/server/Progression/GPLHandler.server.lua"
+          "$path": "src/server/Progression/GPLHandler.lua"
         },
 
         "MasteryTracker": {
@@ -94,9 +94,9 @@
         },
 
         "AuraPressure": {
-          "$path": "src/server/Progression/AuraPressure.server.lua"
+          "$path": "src/server/Progression/AuraPressure.lua"
         }
-      }  
+      }
     },
 
     "StarterPlayer": {
