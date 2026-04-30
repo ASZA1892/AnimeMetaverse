@@ -33,20 +33,25 @@ local function safeWait(parent, name, timeout)
     return inst
 end
 
-local sharedFolder   = safeWait(ReplicatedStorage,   "Shared",       10)
-local typesFolder    = safeWait(sharedFolder,         "Types",        10)
-local combatFolder   = safeWait(ServerScriptService,  "Combat",       10)
-local vitalFiveFolder = safeWait(ServerScriptService, "VitalFive",    10)
+local sharedFolder      = safeWait(ReplicatedStorage,   "Shared",       10)
+local typesFolder       = safeWait(sharedFolder,         "Types",        10)
+local combatFolder      = safeWait(ServerScriptService,  "Combat",       10)
+local vitalFiveFolder   = safeWait(ServerScriptService,  "VitalFive",    10)
+local progressionFolder = safeWait(ServerScriptService,  "Progression",  10)
 
-local ConstantsModule            = safeWait(typesFolder,    "constants",          2)
-local TechniqueDefinitionsModule = safeWait(typesFolder,    "TechniqueDefinitions",2)
-local ElementDefinitionsModule   = safeWait(typesFolder,    "ElementDefinitions", 2)
-local ElementStateModule         = safeWait(sharedFolder,   "ElementState",       10)
-local CombatStateMachineModule   = safeWait(combatFolder,   "CombatStateMachine", 5)
-local GuardSystemModule          = safeWait(combatFolder,   "GuardSystem",        5)
-local ElementInteractionsModule  = safeWait(script.Parent,  "ElementInteractions",5)
-local NodeHitDetectionModule     = safeWait(vitalFiveFolder,"NodeHitDetection",   5)
-local NodeDebuffsModule          = safeWait(vitalFiveFolder,"NodeDebuffs",        5)
+local ConstantsModule            = safeWait(typesFolder,      "constants",           2)
+local TechniqueDefinitionsModule = safeWait(typesFolder,      "TechniqueDefinitions",2)
+local ElementDefinitionsModule   = safeWait(typesFolder,      "ElementDefinitions",  2)
+local ElementStateModule         = safeWait(sharedFolder,     "ElementState",        10)
+local StaminaStateModule         = safeWait(sharedFolder,     "StaminaState",        5)
+local CombatStateMachineModule   = safeWait(combatFolder,     "CombatStateMachine",  5)
+local GuardSystemModule          = safeWait(combatFolder,     "GuardSystem",         5)
+local ElementInteractionsModule  = safeWait(script.Parent,    "ElementInteractions", 5)
+local NodeHitDetectionModule     = safeWait(vitalFiveFolder,  "NodeHitDetection",    5)
+local NodeDebuffsModule          = safeWait(vitalFiveFolder,  "NodeDebuffs",         5)
+local GPLHandlerModule           = safeWait(progressionFolder,"GPLHandler",          5)
+local MasteryTrackerModule       = safeWait(progressionFolder,"MasteryTracker",      5)
+local AuraPressureModule         = safeWait(progressionFolder,"AuraPressure",        5)
 
 print("DEBUG: module presence:",
     "Shared=",              tostring(sharedFolder ~= nil),
@@ -56,11 +61,15 @@ print("DEBUG: module presence:",
     "TechniqueDefinitions=",tostring(TechniqueDefinitionsModule ~= nil),
     "ElementDefinitions=",  tostring(ElementDefinitionsModule ~= nil),
     "ElementState=",        tostring(ElementStateModule ~= nil),
+    "StaminaState=",        tostring(StaminaStateModule ~= nil),
     "CombatStateMachine=",  tostring(CombatStateMachineModule ~= nil),
     "GuardSystem=",         tostring(GuardSystemModule ~= nil),
     "ElementInteractions=", tostring(ElementInteractionsModule ~= nil),
     "NodeHitDetection=",    tostring(NodeHitDetectionModule ~= nil),
-    "NodeDebuffs=",         tostring(NodeDebuffsModule ~= nil)
+    "NodeDebuffs=",         tostring(NodeDebuffsModule ~= nil),
+    "GPLHandler=",          tostring(GPLHandlerModule ~= nil),
+    "MasteryTracker=",      tostring(MasteryTrackerModule ~= nil),
+    "AuraPressure=",        tostring(AuraPressureModule ~= nil)
 )
 
 local function safeRequire(inst, name)
@@ -85,11 +94,15 @@ local Constants            = safeRequire(ConstantsModule,            "constants"
 local TechniqueDefinitions = safeRequire(TechniqueDefinitionsModule,  "TechniqueDefinitions")
 local ElementDefinitions   = safeRequire(ElementDefinitionsModule,    "ElementDefinitions")
 local ElementState         = safeRequire(ElementStateModule,          "ElementState")
+local StaminaState         = safeRequire(StaminaStateModule,          "StaminaState")
 local CombatStateMachine   = safeRequire(CombatStateMachineModule,    "CombatStateMachine")
 local GuardSystem          = safeRequire(GuardSystemModule,           "GuardSystem")
 local ElementInteractions  = safeRequire(ElementInteractionsModule,   "ElementInteractions")
 local NodeHitDetection     = safeRequire(NodeHitDetectionModule,      "NodeHitDetection")
 local NodeDebuffs          = safeRequire(NodeDebuffsModule,           "NodeDebuffs")
+local GPLHandler           = safeRequire(GPLHandlerModule,            "GPLHandler")
+local MasteryTracker       = safeRequire(MasteryTrackerModule,        "MasteryTracker")
+local AuraPressure         = safeRequire(AuraPressureModule,          "AuraPressure")
 
 if not TechniqueDefinitions then error("[ElementHandler] TechniqueDefinitions failed to load") end
 if not ElementState         then error("[ElementHandler] ElementState failed to load")         end
@@ -116,6 +129,19 @@ local techniqueCooldowns = setmetatable({}, { __mode = "k" })
 local lastTechniqueAt    = setmetatable({}, { __mode = "k" })
 
 local TECHNIQUE_MIN_INTERVAL = 0.15
+
+-- Stamina costs per technique tier (from GameDesignDecisions.md)
+local STAMINA_COST_BY_TIER = {
+    Light    = 5,
+    Medium   = 10,
+    Heavy    = 15,
+    Ultimate = 20,
+    Final    = 30,
+}
+
+local function getTechniqueStaminaCost(technique)
+    return STAMINA_COST_BY_TIER[technique.costTier] or 5
+end
 
 local ACTION_TECHNIQUE_USE     = "TechniqueUse"
 local ACTION_TECHNIQUE_RESULT  = "TechniqueResult"
@@ -171,7 +197,7 @@ local function finalSetupSatisfied(player, technique)
     local meta = CombatStateMachine.GetMeta(player)
     consider("requireGuardBroken",       meta.guardBroken == true)
     consider("requireNodeSealed",        anyKnownElementSealed(player))
-    consider("requireMomentumFull",      false) -- Week 4
+    consider("requireMomentumFull",      false)
     consider("requireCharge",            CombatStateMachine.GetState(player) == "Channeling")
     consider("requireFavourableTerrain", true)
 
@@ -246,12 +272,18 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
         return
     end
 
+    -- Stamina check (separate resource from chakra)
+    local staminaCost = getTechniqueStaminaCost(technique)
+    if StaminaState and not StaminaState.HasEnough(player, staminaCost) then
+        fireBlocked(player, technique.id, "insufficient_stamina")
+        return
+    end
+
     if technique.isFinal and not finalSetupSatisfied(player, technique) then
         fireBlocked(player, technique.id, "setup_required")
         return
     end
 
-    -- TODO Phase 2 Week 3: read player mastery progression and pass actual tier
     local tierData = TechniqueDefinitions.GetTierData(technique.id, "mastered")
     if not tierData then
         fireBlocked(player, technique.id, "tier_data_missing")
@@ -263,11 +295,18 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
         return
     end
 
+    -- Deduct stamina — committed to the technique regardless of whether it lands
+    if StaminaState then
+        StaminaState.Deduct(player, staminaCost)
+        dbg("Stamina deducted:", staminaCost, "→", StaminaState.GetStamina(player))
+    end
+
     local okState, stateReason = CombatStateMachine.TrySetState(player, "Attacking", {
         expiresAt = tick() + technique.cooldown,
     })
     if not okState then
         ElementState.AddChakra(player, technique.cost)
+        if StaminaState then StaminaState.Restore(player, staminaCost) end
         dbg("TrySetState failed:", tostring(stateReason))
         fireBlocked(player, technique.id, "state_transition_failed")
         return
@@ -276,11 +315,11 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
     techniqueCooldowns[player] = techniqueCooldowns[player] or {}
     techniqueCooldowns[player][technique.id] = tick() + technique.cooldown
 
-    local rootPart = character.PrimaryPart
-    local range    = tierData.range or 0
+    local rootPart   = character.PrimaryPart
+    local range      = tierData.range or 0
 
     if technique.projectile == true then
-        dbg("[ElementHandler] Projectile technique — TODO Phase 2: spawn projectile via ElementInteractions.lua")
+        dbg("[ElementHandler] Projectile technique — TODO Phase 2: spawn projectile")
         ElementRemote:FireClient(player, ACTION_TECHNIQUE_RESULT, {
             techniqueId = technique.id,
             attacker    = player,
@@ -294,8 +333,8 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
         return
     end
 
-    local hits    = {}
-    local boxCFrame = nil
+    local hits       = {}
+    local boxCFrame  = nil
     local hitboxSize = tierData.hitboxSize or Vector3.new(4, 4, 4)
 
     if range == 0 then
@@ -347,7 +386,7 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
                 if okProc then
                     if type(finalDamage) ~= "number" then finalDamage = 0 end
 
-                    local hitPos     = getHitPosition(hitModel, rootPart.Position)
+                    local hitPos      = getHitPosition(hitModel, rootPart.Position)
                     local blockedFlag = (hitPlayer and CombatStateMachine.GetState(hitPlayer) == "Blocking") or false
 
                     if wasParried then
@@ -371,9 +410,25 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
                             if hitPlayer and hitPlayer ~= player then
                                 ElementState.PauseRegen(hitPlayer)
                             end
+
+                            -- Pause stamina regen on target
+                            if hitPlayer and hitPlayer ~= player and StaminaState then
+                                StaminaState.PauseRegen(hitPlayer)
+                            end
+
+                            -- GPL kill attribution
+                            if hitPlayer and hitPlayer ~= player and GPLHandler then
+                                pcall(function() GPLHandler.RegisterDamage(player, hitPlayer) end)
+                            end
+
+                            -- Aura Pressure combat registration
+                            if hitPlayer and hitPlayer ~= player and AuraPressure then
+                                pcall(function() AuraPressure.RegisterCombat(player, hitPlayer) end)
+                            end
                         end
 
                         -- Vital 5 node hit check — element techniques
+                        local nodeResult = nil
                         if NodeHitDetection and NodeDebuffs and finalDamage > 0 then
                             local nodeContext = {
                                 attacker     = player,
@@ -385,7 +440,7 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
                                 hitboxSize   = hitboxSize,
                                 hitPosition  = hitPos,
                                 damage       = finalDamage,
-                                attackerTier = 3, -- TODO Phase 2 Week 3: read from mastery system
+                                attackerTier = 3,
                                 timestamp    = os.clock(),
                                 metadata     = {
                                     isProjectile    = technique.projectile or false,
@@ -394,7 +449,7 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
                                 },
                                 vitalNodes = technique.vitalNodes or nil,
                             }
-                            local nodeResult = NodeHitDetection.CheckHit(nodeContext)
+                            nodeResult = NodeHitDetection.CheckHit(nodeContext)
                             if nodeResult and nodeResult.hitNode then
                                 dbg(("Vital 5 node hit: %s via %s"):format(nodeResult.nodeName, technique.id))
                                 local debuffResult = NodeDebuffs.Apply(nodeResult, nodeContext)
@@ -403,6 +458,21 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
                                     tostring(debuffResult.debuffId)
                                 ))
                             end
+                        end
+
+                        -- Mastery tracking
+                        if MasteryTracker and finalDamage > 0 then
+                            pcall(function()
+                                MasteryTracker.RegisterHit({
+                                    player        = player,
+                                    techniqueId   = technique.id,
+                                    element       = technique.element,
+                                    hitVitalNode  = nodeResult and nodeResult.hitNode or false,
+                                    attackerGPL   = 100,  -- TODO: ProgressionState.GetGPL(player)
+                                    targetGPL     = hitPlayer and 100 or 0,
+                                    affinityMatch = false, -- TODO: check ElementState.GetAffinity
+                                })
+                            end)
                         end
 
                         if hitModel ~= character and ElementInteractions then
@@ -462,4 +532,4 @@ ElementRemote.OnServerEvent:Connect(function(player, action, data)
     end
 end)
 
-print("✅ ElementHandler initialized")
+print("✅ ElementHandler initialized (with VitalFive/Progression/Stamina)")
