@@ -5,24 +5,26 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService  = game:GetService("UserInputService")
 local Workspace         = game:GetService("Workspace")
 
-local CombatRemote = ReplicatedStorage:WaitForChild("CombatRemote", 10)
-if not CombatRemote then
-    error("CombatRemote not found")
-end
-
+local CombatRemote  = ReplicatedStorage:WaitForChild("CombatRemote", 10)
 local CombatActions = require(ReplicatedStorage.Shared.Types.CombatActions)
 local Constants     = require(ReplicatedStorage.Shared.Types.constants)
 local StaminaState  = require(ReplicatedStorage.Shared.StaminaState)
 
+if not CombatRemote then error("CombatRemote not found") end
+
 local player = Players.LocalPlayer
 
-local lastDashAt         = 0
-local dashCooldown       = Constants.DASH_COOLDOWN      or 0.8
-local quickDashStaminaCost = Constants.DASH_STAMINA_QUICK or 10
+local lastDashAt        = 0
+local isHoldingQ        = false
+
+local dashCooldown          = Constants.DASH_COOLDOWN       or 0.8
+local quickDashStaminaCost  = Constants.DASH_STAMINA_QUICK  or 10
+local mediumDashStaminaCost = Constants.DASH_STAMINA_MEDIUM or 18
+local fullDashStaminaCost   = Constants.DASH_STAMINA_FULL   or 28
 
 local DASH_CONFIRMED_ACTION = (CombatActions.ServerToClient and CombatActions.ServerToClient.DASH_CONFIRMED) or "DashConfirmed"
 
-local function debugPrint(...)
+local function dbg(...)
     if Constants.DEBUG then
         print("[DashController]", ...)
     end
@@ -31,7 +33,6 @@ end
 local function getDashDirection()
     local character = player.Character
     if not character then return Vector3.zero end
-
     local root = character:FindFirstChild("HumanoidRootPart")
     if not root then return Vector3.zero end
 
@@ -39,21 +40,6 @@ local function getDashDirection()
     local s = UserInputService:IsKeyDown(Enum.KeyCode.S)
     local a = UserInputService:IsKeyDown(Enum.KeyCode.A)
     local d = UserInputService:IsKeyDown(Enum.KeyCode.D)
-    local strafe = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-
-    if not w and not s and not a and not d then
-        return root.CFrame.LookVector
-    end
-
-    if strafe then
-        local vec = Vector3.zero
-        if w then vec = vec + root.CFrame.LookVector end
-        if s then vec = vec - root.CFrame.LookVector end
-        if a then vec = vec - root.CFrame.RightVector end
-        if d then vec = vec + root.CFrame.RightVector end
-        if vec.Magnitude > 0 then return vec.Unit end
-        return root.CFrame.LookVector
-    end
 
     local camera = Workspace.CurrentCamera
     if not camera then return root.CFrame.LookVector end
@@ -74,43 +60,30 @@ local function getDashDirection()
     return root.CFrame.LookVector
 end
 
--- Client-side prediction only — server is authoritative.
--- If the prediction is wrong the server rejects the dash and
--- the visual snaps back. Cost deduction happens server-side in DashHandler.
-local function canQuickDash()
+local function canDash(cost)
     local now = tick()
     if (now - lastDashAt) < dashCooldown then
-        debugPrint("Dash blocked: cooldown active")
+        dbg("Dash blocked: cooldown active")
         return false
     end
-    -- Read from local cache (server pushes this regularly)
-    if StaminaState.GetStamina() < quickDashStaminaCost then
-        debugPrint("Dash blocked: insufficient stamina", StaminaState.GetStamina(), "/", quickDashStaminaCost)
+    if StaminaState.GetStamina() < cost then
+        dbg("Dash blocked: insufficient stamina", StaminaState.GetStamina(), "/", cost)
         return false
     end
     return true
 end
 
-local function applyClientDashVisual(directionVec, dashData)
+local function applyDashVisual(direction, speed, duration)
     local character = player.Character
     if not character then return end
-
     local root = character:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    local dashDir = directionVec
-    if typeof(dashDir) ~= "Vector3" then
-        dashDir = root.CFrame.LookVector
-    end
-
-    local speed    = (dashData and dashData.speed)    or 80
-    local duration = (dashData and dashData.duration) or 0.15
-
     local currentVelocity = root.AssemblyLinearVelocity
     root.AssemblyLinearVelocity = Vector3.new(
-        dashDir.X * speed,
+        direction.X * speed,
         currentVelocity.Y,
-        dashDir.Z * speed
+        direction.Z * speed
     )
 
     task.delay(duration, function()
@@ -119,37 +92,60 @@ local function applyClientDashVisual(directionVec, dashData)
             root.AssemblyLinearVelocity = Vector3.new(0, vel.Y, 0)
         end
     end)
-
-    debugPrint("Dash visual applied, speed=", speed)
 end
 
-local function attemptQuickDash()
-    if not canQuickDash() then return end
-
+local function fireDash(dashType, cost, speed, duration)
+    if not canDash(cost) then return end
     local direction = getDashDirection()
     lastDashAt = tick()
 
-    -- Visual is client-predicted; stamina deduction is server-authoritative
-    applyClientDashVisual(direction, { speed = 80, duration = 0.15 })
+    applyDashVisual(direction, speed, duration)
 
     CombatRemote:FireServer(CombatActions.ClientToServer.DASH, {
         direction    = { x = direction.X, y = direction.Y, z = direction.Z },
-        dashType     = "quick",
+        dashType     = dashType,
         clientSentAt = tick(),
     })
 
-    debugPrint("Fired DASH | stamina cache=", StaminaState.GetStamina())
+    dbg("Fired", dashType, "dash | stamina cache=", StaminaState.GetStamina())
 end
+
+-- ─────────────────────────────────────────────
+-- INPUT HANDLING
+-- ─────────────────────────────────────────────
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
+
     if input.KeyCode == Enum.KeyCode.Q then
-        attemptQuickDash()
+        local isShiftHeld = UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+        local isCtrlHeld  = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+
+        if isShiftHeld then
+            -- Q + Shift → full dash
+            dbg("Q+Shift → full dash")
+            fireDash("full", fullDashStaminaCost, 140, 0.25)
+        elseif isCtrlHeld then
+            -- Q + Ctrl → medium dash
+            dbg("Q+Ctrl → medium dash")
+            fireDash("medium", mediumDashStaminaCost, 110, 0.2)
+        else
+            -- Q → quick dash
+            dbg("Q → quick dash")
+            fireDash("quick", quickDashStaminaCost, 80, 0.15)
+        end
     end
 end)
 
-CombatRemote.OnClientEvent:Connect(function(action, data)
-    if action ~= DASH_CONFIRMED_ACTION then return end
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+    if input.KeyCode == Enum.KeyCode.Q then
+        isHoldingQ = false
+    end
 end)
 
-debugPrint("DashController initialized")
+player.CharacterAdded:Connect(function()
+    lastDashAt  = 0
+    isHoldingQ  = false
+end)
+
+print("[DashController] DashController initialized")

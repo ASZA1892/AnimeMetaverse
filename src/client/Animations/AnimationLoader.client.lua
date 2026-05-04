@@ -8,7 +8,7 @@ local AnimationLoader = {}
 
 -- Placeholder animation IDs — replace with custom animations before launch
 local ANIMATION_IDS = {
-	Jab              = "rbxassetid://180435571",
+	Jab              = "rbxassetid://139623620775725",
 	Cross            = "rbxassetid://522635514",
 	Hook             = "rbxassetid://180435571",
 	Uppercut         = "rbxassetid://522635514",
